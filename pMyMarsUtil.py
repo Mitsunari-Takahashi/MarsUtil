@@ -1,4 +1,10 @@
 #!/bin/env python
+"""General utility file of classes and methods for MAGIC data analysis. 
+Start with : python -i pMyMarsUtil.py
+Make an object of QuickMARS or SlowMARS
+QuickMARS: For daily anlaysis, flare advocate.
+SlowMARS: For analysis in detail. You should know your data's DC level.
+"""
 from astropy.time import Time
 import os
 import os.path as path
@@ -12,6 +18,9 @@ from pGetLC_bins import GetLC_bins
 
 
 class SettingsDC:
+"""Class for settings of quate, image cleaning and tuning of MC, depending on DC.
+SettingsDC(naDC=<DC in nA>, bReducedHV=False)
+"""
     def __init__(self, naDC=2000., bReducedHV=False):
         self.naDC = naDC
         self.bReducedHV = bReducedHV

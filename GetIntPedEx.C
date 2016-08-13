@@ -1,3 +1,9 @@
+/*****************************************
+Get the pedestal DC values (mean and rms).
+GetIntPedEx("ssignal1_M1.root ssignal2_M1.root ssignal3_M1.root ...", "Path of output rc file", "Suffix for png file")
+This method creates a combined plot of your files and outputs a rc file for star.
+*****************************************/
+
 int GetIntPedEx(TString inputfiles = "", string strPathRC="", string strSuffix="")
 {
   TObjArray* objarray = inputfiles.Tokenize(" ");
