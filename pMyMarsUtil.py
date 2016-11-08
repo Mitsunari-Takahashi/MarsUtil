@@ -2,10 +2,13 @@
 """General utility file of classes and methods for MAGIC data analysis. 
 Start with : python -i pMyMarsUtil.py
 Make an object of QuickMARS or SlowMARS
-QuickMARS: For daily anlaysis, flare advocate.
+QuickMARS: For daily anlaysis, flare advcoate.
 SlowMARS: For analysis in detail. You should know your data's DC level.
 """
 from astropy.time import Time
+import time
+import ROOT
+from ROOT import std
 import os
 import os.path as path
 import shutil
@@ -13,14 +16,16 @@ import subprocess
 from datetime import datetime
 import re
 import string
+from math import log10
 import glob
 from pGetLC_bins import GetLC_bins
 from pSubmitPJ import *
+from Fermi.pLsList import ls_list
+from pCommon import *
 
 class SettingsDC:
-"""Class for settings of quate, image cleaning and tuning of MC, depending on DC.
-SettingsDC(naDC=<DC in nA>, bReducedHV=False)
-"""
+    """Class for settings of quate, image cleaning and tuning of MC, depending on DC.
+SettingsDC(naDC=<DC in nA>, bReducedHV=False)"""
     def __init__(self, naDC=2000., bReducedHV=False):
         self.naDC = naDC
         self.bReducedHV = bReducedHV
@@ -46,7 +51,7 @@ SettingsDC(naDC=<DC in nA>, bReducedHV=False)
                 self.aCleaning = [14.0, 9.0]
             else:
                 print 'The DC is not acceptable for this class.'
-        if bReducedHV==True or naDC>4000:
+        if bReducedHV==True or naDC>2000:
             self.bTunedTrain = True
         else:
             self.bTunedTrain = False
@@ -76,6 +81,10 @@ nForm: int, float, str"""
         return self.bReducedHV
     def getLVsCleaning(self):
         return self.aCleaning
+    def getLowerLVsCleaning(self):
+        return self.aCleaning[1]
+    def getHigherLVsCleaning(self):
+        return self.aCleaning[0]
     def getBoolTunedTrain(self):
         return self.bTunedTrain
     def getBoolTunedTest(self):
@@ -83,9 +92,9 @@ nForm: int, float, str"""
 
 class QuickMARS:
     """Class for slow analysis. You should know which data file is corresponding to each cut condition.
-QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=3000., bReducedHV=False)
-  Ex) qma = QuickMARS('1ES1959+650', '2016-04-29', ZenithCut='35to50', TransCut9km='No', CloudCut='45', DcCut='4500')
-1) qma = SlowMARS(nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False)
+QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=3000., bReducedHV=False, bTimesOption=True, strTypeMC='', strPeriodMC=''):
+  Ex) qma = QuickMARS('1ES1959+650', '2016-04-29', ZenithCut='35to50', TransCut9km='No', CloudCut='45', naCutDC='4500', bReducedHV=False, bTimesOption=True)
+1) qma = QuickMARS(nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False, bTimesOption=True)
 2) qma.makeDirs()
 == No Moon ==
 3) Put your superstar files to the created directories
@@ -125,7 +134,8 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
 16) qma.odie(bLE=True, bFR=True, bHE=False)
 17) qma.flute(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc=True, bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1)
 """
-    def __init__(self, nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=3000., bReducedHV=False):
+    def __init__(self, nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=3000., bReducedHV=False, bTimesOption=True, strTypeMC='', strPeriodMC='', bForce=True):
+        SetEnvironForMARS(verRoot = "5.34.24")
         self.PATH_MARSSYS = os.environ['MARSSYS']
         self.PATH_PYTHON_MODULE_MINE = os.environ['PATH_PYTHON_MODULE_MINE']
         #self.PATH_BASE = "/Volumes/SHUNZEI/MAGIC" #"/Volumes/KARYU/MAGIC"
@@ -134,8 +144,15 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         self.PATH_DIR_RC = os.environ['PATH_MARS_RC_MINE']
         self.nameSrc = nameSrc
         self.timeThisNight = Time(strNight, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
+        if strPeriodMC=='':
+            self.strVersionMC = '{0}{1}'.format(getPeriodMC(self.timeThisNight), strTypeMC)
+        else:
+            self.strVersionMC = '{0}{1}'.format(strPeriodMC, strTypeMC)
+#        self.versionMC = ''
         self.titleAnalysis = self.timeThisNight
         self.isoThisNight = self.timeThisNight.value
+        self.bTimesOption = bTimesOption
+        self.bForce = bForce
         #self.mjdThisNight = int(self.timeThisNight.mjd)
         #self.ZenithCut = ZenithCut
         self.setZenithCut(ZenithCut)
@@ -147,6 +164,7 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         #self.nameCfg = 'ZenithCut{0}_TransCut9km{1}_CloudCut{2}_DcCut{3}'.format(self.getZenithCut(), self.getTransCut9km(), self.getCloudCut(), self.getDcCut())
         self.pathDirSpot = '{0}/{1}/{2}'.format(self.getPathBase(), self.getSourceName(), self.getTitleAnalysis())
         self.pathDirCondition = '{0}/{1}'.format(self.getPathDirSpot(), self.getConfigName())
+        self.PATH_DIR_MC = '{0}/standard/{1}'.format(self.getPathBase(), self.getVersionMC())
         self.setSubDirs()
 
     def setSubDirs(self):
@@ -162,13 +180,17 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         self.pathDirStarCrab = '{0}/starCrab'.format(self.getPathDirSpot())
         self.pathDirCalibrated = '{0}/calibrated'.format(self.getPathDirSpot())
         self.pathDirCalibratedOFF = '{0}/standard/OFF/calibrated'.format(self.getPathBase())
-        self.pathDirSuperstarMC = '{0}/superstarMC'.format(self.getPathDirSpot())
-        self.pathDirMelibeaMC = '{0}/standard/melibeaMC/za{1}'.format(self.getPathBase(), self.getZenithCut())
-        self.pathDirMelibeaNonStdMC = '{0}/melibeaMC'.format(self.getPathDirSpot())
-        self.pathDirSuperstar = '{0}/superstar'.format(self.getPathDirSpot())
         self.pathDirQuate = '{0}/quate'.format(self.getPathDirCondition())
 #        self.pathDirQuateOFF = '{0}/{1}/{2}/{3}/quateOFF'.format(self.getPathDirSpot(), self.getConfigName())
         self.pathDirQuateCrab = '{0}/quateCrab'.format(self.getPathDirCondition())
+        self.pathDirSuperstarMC = '{0}/superstarMC'.format(self.getPathDirSpot())
+        self.pathDirMelibeaMC = '{0}/melibeaMC/za{1}'.format(self.getPathDirMC(), self.getZenithCut())
+        self.pathDirMelibeaNonStdMC = '{0}/melibeaMC'.format(self.getPathDirSpot())
+        self.pathDirSuperstar = '{0}/superstar'.format(self.getPathDirSpot())
+        if self.getTimesOption()==True:
+            self.pathDirSuperstarUsed = '{0}/superstar'.format(self.getPathDirSpot())
+        else:
+            self.pathDirSuperstarUsed = '{0}/good'.format(self.getPathDirQuate())
         self.pathDirMelibea = '{0}/melibea'.format(self.getPathDirCondition())
         self.pathDirMelibeaCrab = '{0}/melibeaCrab'.format(self.getPathDirCondition())
         self.pathDirOdie = '{0}/odie'.format(self.getPathDirCondition())
@@ -176,7 +198,7 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         self.pathDirCaspar = '{0}/caspar'.format(self.getPathDirCondition())
         self.pathDirFlute = '{0}/flute'.format(self.getPathDirCondition())
         self.pathDirFluteCrab = '{0}/fluteCrab'.format(self.getPathDirCondition())
-        self.pathDirCoach = '{0}/standard/coach/za{1}'.format(self.getPathBase(), self.getZenithCut())
+        self.pathDirCoach = '{0}/coach/za{1}'.format(self.getPathDirMC(), self.getZenithCut())
         self.pathDirCoachNonStd = '{0}/coachNonStd'.format(self.getPathDirSpot())
         
     def help(self, strCmd=""):
@@ -221,10 +243,10 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         if strCmd=="fluteCrab" or strCmd=="":
             print ".fluteCrab(eth=300, bMelibeaNonStdMc=False)"
 
-    def setTitle(self, strTitle):
-        self.title = strTitle
-    def getTitle(self):
-        return self.title
+    def setTitleAnalysis(self, strTitle):
+        self.titleAnalysis = strTitle
+    def getTitleAnalysis(self):
+        return self.titleAnalysis
     def setZenithCut(self, strCut):
         if strCut=='No' or strCut=='no':
             self.ZenithCut = 'No'
@@ -283,6 +305,10 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         else:
             print nCutVal, "cannot be set as DcCut."
             return 1
+    def getTimesOption(self):
+        return self.bTimesOption
+    def getVersionMC(self):
+        return self.strVersionMC
     def getTransCut9km(self):
         return self.TransCut9km
     def getCloudCut(self):
@@ -293,6 +319,8 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         return self.DcCut
     def getPathBase(self):
         return self.PATH_BASE
+    def getPathDirMC(self):
+        return self.PATH_DIR_MC
     def getPathMarssys(self):
         return self.PATH_MARSSYS
     def getPathPythonModuleMine(self):
@@ -309,7 +337,8 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
             return timeTmp
         elif strFmt=='short':
             strTemp = timeTmp.value
-            strShort = '{0}{1}{2}'.format(strTemp[:4], strTemp[5:7], strTemp[8:])
+            #strShort = '{0}{1}{2}'.format(strTemp[:4], strTemp[5:7], strTemp[8:])
+            strShort = MakeShortDateExpression(strTemp)
             return strShort
         else:
             timeTmp.format = strFmt
@@ -353,6 +382,8 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         return self.pathDirMelibeaNonStdMC
     def getPathDirSuperstar(self):
         return self.pathDirSuperstar
+    def getPathDirSuperstarUsed(self):
+        return self.pathDirSuperstarUsed
     def getPathDirQuate(self):
         return self.pathDirQuate
     def getPathDirQuateOFF(self):
@@ -540,8 +571,10 @@ CloudinessMax: {6}
         rcOrig.close()
         rcNew.close()
         subprocess.call(['head', pathRcNew])
-        aCmd = [ 'quate', '-b', '--stereo', '-f', '--config={0}'.format(pathRcNew), '--ind={0}'.format(self.getPathDirSuperstar()), '--out=.', '--times' ]
-#        aCmd = [ 'quate', '-b', '--stereo', '-f', '--config={0}'.format(pathRcNew), '--ind={0}'.format(self.getPathDirSuperstar()), '--out=.' ]
+        if self.getTimesOption()==True:
+            aCmd = [ 'quate', '-b', '--stereo', '-f', '--config={0}'.format(pathRcNew), '--ind={0}'.format(self.getPathDirSuperstar()), '--out=.', '--times' ]
+        else:
+            aCmd = [ 'quate', '-b', '--stereo', '-f', '--config={0}'.format(pathRcNew), '--ind={0}'.format(self.getPathDirSuperstar()), '--out=.' ]
         print aCmd
         subprocess.call(aCmd)
         if os.environ['OSTYPE'][:6]=='darwin':
@@ -549,10 +582,18 @@ CloudinessMax: {6}
             subprocess.call(['open', '.'])
         elif os.environ['OSTYPE']=='linux':
             subprocess.call(['evince', 'Overview.pdf'])
-        print "M1 excluded:"
-        subprocess.call(['cat', '{0}/excluded_1.times'.format(self.getPathDirQuate())])
-        print "M2 excluded:"
-        subprocess.call(['cat', '{0}/excluded_2.times'.format(self.getPathDirQuate())])
+        if self.getTimesOption()==True:        
+            print "M1 excluded:"
+            subprocess.call(['cat', '{0}/excluded_1.times'.format(self.getPathDirQuate())])
+            print "M2 excluded:"
+            subprocess.call(['cat', '{0}/excluded_2.times'.format(self.getPathDirQuate())])
+        else:
+            print "good:"
+            subprocess.call(['ls', '{0}/good'.format(self.getPathDirQuate())])
+            print "bad:"
+            subprocess.call(['ls', '{0}/bad'.format(self.getPathDirQuate())])
+            print "out-of-zd:"
+            subprocess.call(['ls', '{0}/out-of-zd'.format(self.getPathDirQuate())])
 
     def quateOFF(self):
         SetEnvironForMARS("5.34.24")
@@ -596,14 +637,15 @@ CloudinessMax: {6}
         pathDirWork = self.getPathDirCoachNonStd()
         os.chdir(pathDirWork)
         print os.getcwd()
+        SetEnvironForMARS("5.34.24")
        # Modify RC file
-        strRcAdd = """RF.mcdata: {0}/TRAIN/GA_za{1}_TRAIN_S_wr.root
-RF.data:  {2}/good/20*_S_*.root
-RF.outpath: {3}
-RF.outname: coach_{4}
-RF.zdmin: {5}
-RF.zdmax: {6}
-""".format(self.getPathDirSuperstarMC(), self.getZenithCut(), self.getPathDirSuperstarOFF(), self.getPathDirCoachNonStd(), self.getConfigName(), self.getZenithCutLow(), self.getZenithCutUp())
+        strRcAdd = """RF.mcdata: {0}/TRAIN/GA_za*_TRAIN_S_wr.root
+RF.data:  {1}/good/20*_S_*.root
+RF.outpath: {2}
+RF.outname: coach_{3}
+RF.zdmin: {4}
+RF.zdmax: {5}
+""".format(self.getPathDirSuperstarMC(), self.getPathDirSuperstarOFF(), self.getPathDirCoachNonStd(), self.getConfigName(), self.getZenithCutLow(), self.getZenithCutUp())
         pathRcNew = './coach_{0}.rc'.format(self.getConfigName())
         rcNew = open(pathRcNew, 'w') 
         rcNew.write(strRcAdd)
@@ -614,7 +656,6 @@ RF.zdmax: {6}
         rcOrig.close()
         rcNew.close()
         subprocess.call(['head', pathRcNew])
-        SetEnvironForMARS("5.34.24")
         aCmd = [ 'coach', '--config=./coach_{0}.rc'.format(self.getConfigName()), '-RFgh', '-RFdisp', '-LUTs', '-q', '-b' ]
         print aCmd
         subprocess.call(aCmd)
@@ -650,7 +691,12 @@ RF.zdmax: default: {1}
         rcNew.write(rcCopied)
         rcOrig.close()
         rcNew.close()
-        aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstar()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuate()) ]
+        if self.getTimesOption()==True:
+            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuate()) ]
+        else:
+            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd) ]
+        if self.bForce==True:
+            aCmd.append('-f')
         print aCmd
         subprocess.call(aCmd)
 
@@ -692,7 +738,7 @@ RF.zdmax: default: {1}
             pathDirWork = '{0}/{1}'.format(self.getPathDirMelibeaNonStdMC(), dset)
             os.chdir(pathDirWork)
             print os.getcwd()
-            aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/{1}/GA_za{2}_*{1}_S_wr.root'.format(self.getPathDirSuperstarMC(), dset, self.getZenithCut()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-mc' ]
+            aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/{1}/GA_za*{1}_S_wr.root'.format(self.getPathDirSuperstarMC(), dset), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-mc' ]
             print aCmd
             subprocess.call(aCmd)
 
@@ -775,8 +821,8 @@ Odie.maxZenith: {1}
             print aCmd
             subprocess.call(aCmd)
             SetEnvironForMARS("5.34.14")
-            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveTh2OnAndOffCan.C("Output_odie_{1}_{2}.root", "{3}", "{4}_{2}")'.format(self.getPathPythonModuleMine(), self.getConfigName(), er, self.getSourceName(), self.getTimeThisNight('short'))])
-            pathImage = '{0}/th2OnAndOffCan_{1}_{2}_{3}.png'.format(pathDirWork, self.getSourceName(), self.getTimeThisNight('short'), er)
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveTh2OnAndOffCan.C("Output_odie_{1}_{2}.root", "{3}", "{4}_{2}")'.format(self.getPathPythonModuleMine(), self.getConfigName(), er, self.getSourceName(), self.getTitleAnalysis())])
+            pathImage = '{0}/th2OnAndOffCan_{1}_{2}_{3}.png'.format(pathDirWork, self.getSourceName(), self.getTitleAnalysis(), er)
             print pathImage
             catchImage(pathImage)
 #            if os.environ['OSTYPE'][:6]=='darwin':
@@ -809,27 +855,41 @@ Odie.maxZenith: {1}
             print aCmd
             subprocess.call(aCmd)
             SetEnvironForMARS("5.34.14")
-            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveTh2OnAndOffCan.C("Output_odie.root", "{1}", "CrabSanityCheck_{2}_{3}")'.format(self.getPathPythonModuleMine(), self.getSourceName(), self.getTimeThisNight('short'), er)])
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveTh2OnAndOffCan.C("Output_odie.root", "{1}", "CrabSanityCheck_{2}_{3}")'.format(self.getPathPythonModuleMine(), self.getSourceName(), self.getTitleAnalysis(), er)])
             if os.environ['OSTYPE'][:6]=='darwin':
-                subprocess.call(['open', 'th2OnAndOffCan_{0}_CrabSanityCheck_{1}_{2}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), er)])
+                subprocess.call(['open', 'th2OnAndOffCan_{0}_CrabSanityCheck_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), er)])
             else:
-                subprocess.call(['eog', 'th2OnAndOffCan_{0}_CrabSanityCheck_{1}_{2}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), er)])
-            #subprocess.call(['imgcat', 'th2OnAndOffCan_{0}_CrabSanityCheck_{1}_{2}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), er)])
+                subprocess.call(['eog', 'th2OnAndOffCan_{0}_CrabSanityCheck_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), er)])
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1):
-        #subprocess.call( 'source ~/.tcshrc_MARS', shell=True ) # ROOT 5.34.24
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, pathCustomBinRefer=""):
+        SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
         if bMelibeaNonStdMc==True:
             pathMelibeaMC = self.getPathDirMelibeaNonStdMC()
         else:
             pathMelibeaMC = self.getPathDirMelibeaMC()
+        if nightDesignate=='':
+            if runDesignate=='':
+                strInDesignate = '20'
+                strOutDesignate = ''
+            else:
+                strInDesignate = '20*_{0}'.format(runDesignate)
+                strOutDesignate = 'run{0}_'.format(runDesignate)
+        else:
+            if runDesignate=='':
+                strInDesignate = nightDesignate
+                strOutDesignate = '{0}_'.format(nightDesignate)
+            else:
+                strInDesignate = '{0}_{1}'.format(nightDesignate, runDesignate)
+                strOutDesignate = '{0}run{1}_'.format(nightDesignate, runDesignate)
+
         strRcData="""
-flute.mcdata:  {0}/TEST/GA_za{1}*_Q_*.root
-flute.data:    ../../melibea/20*_Q_*.root
-""".format(pathMelibeaMC, self.getZenithCut())
+flute.mcdata:  {0}/TEST/GA_*_Q_*.root
+flute.data:    {1}/{2}*_Q_*.root
+""".format(pathMelibeaMC, self.getPathDirMelibea(), strInDesignate)
         strRcZd="""flute.minZd: {0}
 flute.maxZd: {1}
 """.format(self.getZenithCutLow(), self.getZenithCutUp())
@@ -845,6 +905,14 @@ flute.maxZd: {1}
         if assumedSpectrum != "":
             strRcAssumedSpectrum = """flute.AssumedSpectrum: {0}
 """.format(assumedSpectrum)
+        
+        if nebin==0:
+            nebin = int((log10(emax) - log10(emin)) * 10)
+        strRcEnergyRange = """flute.nBinsEnergyEst: {0}
+flute.minEnergyEst: {1}
+flute.maxEnergyEst: {2}
+""".format(nebin, emin, emax)
+
         pathDirWork = ''
         aBinning = []
         if bSingleBin==True:
@@ -856,16 +924,24 @@ flute.maxZd: {1}
         if bCustom==True:
             aBinning.append('custom')
         for wise in aBinning:
-            pathDirWork = '{0}/{1}'.format(self.getPathDirFlute(), wise)
-            #if path.exists(pathDirWork)==False:
-             #   os.makedirs(pathDirWork)
+            SetEnvironForMARS("5.34.24")
+            if nameSubDirWork=='':
+                pathDirWork = '{0}/{1}'.format(self.getPathDirFlute(), wise)
+            else:
+                pathDirWork = '{0}'.format(nameSubDirWork)
+                if path.exists(pathDirWork)==False:
+                    os.makedirs(pathDirWork)
             os.chdir(pathDirWork)
             print os.getcwd()
             strRcLc = """flute.EminLC: {0}
 flute.LCbinning: {1}
 """.format(eth, wise)
+            strOutput = '{0}_{1}{2}GeV_{3}'.format(self.getConfigName(), strOutDesignate, int(eth), wise)
             if wise=="custom":
-                aBinCustom = GetLC_bins("{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth)))
+                if pathCustomBinRefer=="":
+                    aBinCustom = GetLC_bins("{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth)))
+                else:
+                    aBinCustom = GetLC_bins(pathCustomBinRefer) #Output_flute file
                 strRcLc = strRcLc + """
 flute.LCbinlowedge: {0}""".format(aBinCustom[0][0])
                 for itv in aBinCustom[0][1:]:
@@ -877,8 +953,9 @@ flute.LCbinupedge: {0}""".format(aBinCustom[1][0])
                 strRcLc = strRcLc + """
 """
             # Modify RC file
-            strRcAdd = strRcData + strRcZd + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
-            pathRcNew = './flute_{0}_{1}GeV_{2}.rc'.format(self.getConfigName(), int(eth), wise)
+            strRcAdd = strRcData + strRcZd + strRcEnergyRange + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
+#            pathRcNew = './flute_{0}_{1}{2}GeV_{3}.rc'.format(self.getConfigName(), strOutDesignate, int(eth), wise)
+            pathRcNew = './flute_{0}.rc'.format(strOutput)
             rcNew = open(pathRcNew, 'w') 
             rcNew.write(strRcAdd)
             rcOrig = open('{0}/mrcfiles/flute.rc'.format(self.getPathMarssys()), 'r')
@@ -888,23 +965,20 @@ flute.LCbinupedge: {0}""".format(aBinCustom[1][0])
             rcNew.close()
             subprocess.call(['head', pathRcNew])
 
-            SetEnvironForMARS("5.34.24")
             aCmd = [ 'flute', '-q', '-b', '--config={0}'.format(pathRcNew) ]
             print aCmd
             subprocess.call(aCmd)
             SetEnvironForMARS("5.34.14")
-            subprocess.call([ 'root', '-b', '-q', '{5}/MarsUtil/SaveFlutePlots.C("Status_flute_{2}_{3}GeV_{4}.root", "{0}", "{1}_{2}_{3}GeV_{4}", "png", {6})'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise, self.getPathPythonModuleMine(), fluxMaxInCrab)])
-            if os.environ['OSTYPE'][:6]=='darwin':
-                subprocess.call(['open', 'SED_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])    
-                subprocess.call(['open', 'LightCurve_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])
-            elif os.environ['OSTYPE']=='linux':
-                subprocess.call(['eog', 'SED_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])    
-                subprocess.call(['eog', 'LightCurve_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])
-            #subprocess.call(['imgcat', 'SED_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])    
-            #subprocess.call(['imgcat', 'LightCurve_{0}_{1}_{2}_{3}GeV_{4}.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), wise)])
-            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/GetLC_values.C("Output_flute_{1}_{2}GeV_{3}.root")'.format(self.getPathPythonModuleMine(), self.getConfigName(), int(eth), wise)])
-        if os.environ['OSTYPE'][:6]=='darwin':
-            subprocess.call(['open', '..'])
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveFlutePlots.C("Status_flute_{3}.root", "{1}", "{2}_{3}", "png", {4})'.format(self.getPathPythonModuleMine(), self.getSourceName(), self.getTitleAnalysis(), strOutput, fluxMaxInCrab)])
+            if bDisplay==True:
+                if os.environ['OSTYPE'][:6]=='darwin':
+                    subprocess.call(['open', 'SED_{0}_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), strOutput)])
+                    subprocess.call(['open', 'LightCurve_{0}_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), strOutput)])
+                    subprocess.call(['open', '..'])
+                elif os.environ['OSTYPE']=='linux':
+                    subprocess.call(['eog', 'SED_{0}_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), strOutput)])    
+                    subprocess.call(['eog', 'LightCurve_{0}_{1}_{2}.png'.format(self.getSourceName(), self.getTitleAnalysis(), strOutput)])
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/GetLC_values.C("Output_flute_{1}.root")'.format(self.getPathPythonModuleMine(), strOutput)])
 
     def fluteCrab(self, eth=300, bMelibeaNonStdMc=""):
         if not isinstance(bMelibeaNonStdMc, bool):
@@ -952,13 +1026,13 @@ flute.LCbinning: {1}
             print aCmd
             subprocess.call(aCmd)
             SetEnvironForMARS("5.34.14")
-            subprocess.call([ 'root', '-b', '-q', '{4}/MarsUtil/SaveFlutePlots.C("Status_fluteCrab_{2}_{3}GeV.root", "{0}", "CrabSanityCheck_{1}_{2}_{3}GeV")'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth), self.getPathPythonModuleMine())])
+            subprocess.call([ 'root', '-b', '-q', '{4}/MarsUtil/SaveFlutePlots.C("Status_fluteCrab_{2}_{3}GeV.root", "{0}", "CrabSanityCheck_{1}_{2}_{3}GeV")'.format(self.getSourceName(), self.getTitleAnalysis(), self.getConfigName(), int(eth), self.getPathPythonModuleMine())])
             if os.environ['OSTYPE'][:6]=='darwin':
-                subprocess.call(['open', 'SED_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth))]) 
-                subprocess.call(['open', 'LightCurve_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth))])
+                subprocess.call(['open', 'SED_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTitleAnalysis(), self.getConfigName(), int(eth))]) 
+                subprocess.call(['open', 'LightCurve_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTitleAnalysis(), self.getConfigName(), int(eth))])
             elif os.environ['OSTYPE']=='linux':
-                subprocess.call(['eog', 'SED_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth))])  
-                subprocess.call(['eog', 'LightCurve_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTimeThisNight('short'), self.getConfigName(), int(eth))])
+                subprocess.call(['eog', 'SED_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTitleAnalysis(), self.getConfigName(), int(eth))])  
+                subprocess.call(['eog', 'LightCurve_{0}_CrabSanityCheck_{1}_{2}_{3}GeV.png'.format(self.getSourceName(), self.getTitleAnalysis(), self.getConfigName(), int(eth))])
             subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/GetLC_values.C("Output_fluteCrab_{1}_{2}GeV.root")'.format(self.getPathPythonModuleMine(), self.getConfigName(), int(eth))])
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
@@ -971,14 +1045,25 @@ flute.LCbinning: {1}
             pathDirWork = '{0}/{1}'.format(self.getPathDirSsignal(), tel)
             os.chdir(pathDirWork)
             aFile = glob.glob("{0}/{1}/ssignal*".format(self.getPathDirSsignal(), tel))
-            strLiFile = ""
-            strLiFile = aFile[0]
-            for iFile in aFile[1:]:
-                strLiFile = strLiFile + " " + iFile
-            pathRcNew = '{0}/{1}/star_{1}_noise{2}.rc'.format(self.getPathDirStar(), tel, self.getTimeThisNight('short', True))
-            pathRcNewMC = '{0}/{1}/star_{1}_noise{2}_MC.rc'.format(self.getPathDirStarMC(), tel, self.getTimeThisNight('short', True))
+            pathListSsignal = '{0}/List_ssignal_files_temporal-{1}.root'.format(pathDirWork, tel)
+            fileListSsignal = ROOT.TFile(pathListSsignal, 'RECREATE')
+            fileListSsignal.cd()
+            trListSsignal = ROOT.TTree('ListSsignal', 'List of ssignal files for {0}, DC<{1}'.format(self.getTitleAnalysis(), confDC.getNaDC()))
+            strPathListSsignal = ROOT.TString(256)
+            trListSsignal.Branch('PathListSsignal', strPathListSsignal)
+            trListSsignal.Write()
+            #fileListSsignal = open(pathListSsignal, 'w') 
+            for iFileSsignal in range(len(aFile)):
+                strPathListSsignal.Clear()
+                strPathListSsignal.Append(aFile[iFileSsignal])
+                print strPathListSsignal.Data()
+                trListSsignal.Fill()
+            trListSsignal.Write()
+            fileListSsignal.Close()
+            pathRcNew = '{0}/{1}/star_{1}_noise{2}.rc'.format(self.getPathDirStar(), tel, self.getTitleAnalysis())
+            pathRcNewMC = '{0}/{1}/star_{1}_noise{2}_MC.rc'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis())
             SetEnvironForMARS("5.34.14")
-            aCmd = [ 'root', '-b', '-q', '{0}/MarsUtil/GetIntPedEx.C("{1}", "{2}", "{3}")'.format(self.getPathPythonModuleMine(), strLiFile, pathRcNewMC, tel)]
+            aCmd = [ 'root', '-b', '-q', '{0}/MarsUtil/GetIntPedEx.C("{1}", "{2}", "{3}")'.format(self.getPathPythonModuleMine(), pathListSsignal, pathRcNewMC, tel)]
             print aCmd
             subprocess.call(aCmd)
             if os.environ['OSTYPE'][:6]=='darwin':
@@ -996,13 +1081,12 @@ MJStar.UseStarguider: no
             strClean = """MJStar.MImgCleanStd.CleanMethod: Absolute
 MJStar.MImgCleanStd.CleanLevel1: {0}
 MJStar.MImgCleanStd.CleanLevel2: {1}
-""".format(confDC.getLVsCleaning[0], confDC.getLVsCleaning[1])
+""".format(confDC.getHigherLVsCleaning(), confDC.getLowerLVsCleaning())
             rcNew = open(pathRcNew, 'a')
             rcNewMC = open(pathRcNewMC, 'a')
             rcNewMC.write(strAddNoise)
             rcNew.write(strNoStarGuider)
             rcNewMC.write(strNoStarGuider)
-            #if bTighterCleaning==True:
             if confDC.getNaDC()>2000:
                 rcNew.write(strClean)
                 rcNewMC.write(strClean)
@@ -1037,8 +1121,8 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
                 pathDirWork = '{0}/{1}/{2}'.format(self.getPathDirStarMC(), tel, dset)
                 os.chdir(pathDirWork)
                 print os.getcwd()
-                strCmd = 'star -mc -b -f --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/standard/MC/ST.03.06-Mmcs699/{4}/calibrated/{1}/GA_*_Y_*.root" --out=./ --log=LogStarMC_{4}_{1}.txt'.format(self.getPathDirStarMC(), tel, self.getTimeThisNight('short'), self.getPathBase(), dset)
-                SubmitPJ(strCmd, pathDirWork, 'StarMC_{0}_{1}'.format(dset, tel))
+                strCmd = 'star -mc -b -f --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/MC/{4}/calibrated/za{5}/{1}/GA_*_Y_*.root" --out=./ --log=LogStarMC_{4}_{1}.txt'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirMC(), dset, self.getZenithCut())
+                SubmitPJ(strCmd, pathDirWork, 'StarMC_{0}_{1}'.format(dset, tel), strRscGrp="B", verROOT="5.34.24", jobname='SrM{0}{1}'.format(dset[:2], tel))
                 # aCmd = [ 'star', '-b', '-f', '-mc', '--config=../star_{0}_noise{1}.rc'.format(tel, self.getTimeThisNight('short')), '--ind={0}/standard/MC/ST.03.06-Mmcs699/{1}/calibrated/{2}/GA_*_Y_*.root'.format(self.getPathBase(), dset, tel), '--out=./', '--log=LogStarMC.txt' ]
                 # print aCmd
                 # subprocess.call(aCmd)
@@ -1059,13 +1143,12 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
                 fileZ = os.path.basename(fileY)
                 aRun.append(fileZ[12:20])
             aRunUiq = list(set(aRun))
-            #print aRunUiq
+            print aRunUiq
             os.chdir(pathDirWork)
             print os.getcwd()
             for runUiq in aRunUiq:
-                strCmd = 'star -b --config={0}/{1}/star_{1}_noise{2}.rc --ind="{3}/{1}/20*_{1}_{4}*_Y_*.root" --out=./ --outname={4} --log=LogStar{4}.txt'.format(self.getPathDirStar(), tel, self.getTimeThisNight('short'), self.getPathDirCalibrated(), runUiq)
-                #print strCmd
-                SubmitPJ(strCmd, pathDirWork, 'Star{0}{1}'.format(runUiq, tel))
+                strCmd = 'star -b -f --config={0}/{1}/star_{1}_noise{2}.rc --ind="{3}/{1}/20*_{1}_{4}*_Y_*.root" --out=./ --outname={4} --log=LogStar{4}.txt'.format(self.getPathDirStar(), tel, self.getTitleAnalysis(), self.getPathDirCalibrated(), runUiq)
+                SubmitPJ(strCmd, pathDirWork, 'Star{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='Sr{0}{1}'.format(runUiq[-3:], tel))
 
     def starOFF(self):
         pathDirWork = ''
@@ -1083,8 +1166,8 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             print os.getcwd()
             for runUiq in aRunUiq:
                 #aCmd = [ 'star', '-b', '-f', '--config={0}/{1}/star_{2}_noise{3}.rc'.format(self.getPathDirStarMC(), tel, tel, self.getTimeThisNight('short')), '--ind={0}/standard/OFF/calibrated/{1}/20*_{2}_{3}*_Y_*.root'.format(self.getPathBase(), tel, tel, runUiq), '--out=./', '--log=LogStarOFF{0}.txt'.format(runUiq) ]
-                strCmd = 'star -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/za{5}/20*_{1}_{4}*_Y_*.root" --out=./ --log=LogStarOFF{4}.txt --outname=starOFF{4}'.format(self.getPathDirStarMC(), tel, self.getTimeThisNight('short'), self.getPathDirCalibratedOFF(), runUiq, self.getZenithCut())
-                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel))
+                strCmd = 'star -f -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/za{5}/20*_{1}_{4}*_Y_*.root" --out=./ --log=LogStarOFF{4}.txt --outname=starOFF{4}'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirCalibratedOFF(), runUiq, self.getZenithCut())
+                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='SrO{0}{1}'.format(runUiq[-2:, tel]))
 
     def starCrab(self, aPathCalibratedCrab):
         pathDirWork = ''
@@ -1103,7 +1186,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
                 os.chdir(pathDirWork)
                 print os.getcwd()
                 for runUiq in aRunUiq:
-                    strCmd = 'star -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/20*_{1}_{4}*_Y_*.root" --out=./ --outname=starCrab{4} --log=LogStarCrab{4}.txt'.format(self.getPathDirStarMC(), tel, self.getTimeThisNight('short'), pathCalibratedCrab, runUiq)
+                    strCmd = 'star -b -f --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/20*_{1}_{4}*_Y_*.root" --out=./ --outname=starCrab{4} --log=LogStarCrab{4}.txt'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), pathCalibratedCrab, runUiq)
                     SubmitPJ(strCmd, pathDirWork, 'StarCrab{0}{1}'.format(runUiq, tel))
 
     def superstar(self):
@@ -1121,7 +1204,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
         print aRunUiq
         for runUiq in aRunUiq:
             strCmd = 'superstar -f -q -b --config={0}/superstar.rc --ind1="{1}/M1/20*_M1_{2}*_I_*root" --ind2="{1}/M2/20*_M2_{2}*_I_*.root" --out=./ --log=LogSuperStar_{2}.log --outname=superstar_{2}'.format(self.getPathDirSuperstarMC(), self.getPathDirStar(), runUiq)
-            SubmitPJ(strCmd, pathDirWork, 'Superstar{0}'.format(runUiq))
+            SubmitPJ(strCmd, pathDirWork, 'Superstar{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24", jobname='SSr{0}'.format(runUiq[-4:]))
 
     def superstarMC(self, bTrain="", bTest=""):
         if not isinstance(bTrain, bool):
@@ -1143,9 +1226,10 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             #subprocess.call(aCmd)
             strCmd = 'superstar -f -q -b -mc --config={0}/superstar.rc --ind1="{1}/M1/{2}/GA_M1*_I_*root" --ind2="{1}/M2/{2}/GA_M2*_I_*.root" --out=./ --log=LogSuperStarMC.log'.format(self.getPathDirSuperstarMC(), self.getPathDirStarMC(), dset)
             #print strCmd
-            SubmitPJ(strCmd, pathDirWork, "SuperstarMC{0}".format(dset))
+            SubmitPJ(strCmd, pathDirWork, "SuperstarMC{0}".format(dset), strRscGrp="B", verROOT="5.34.24", jobname='SSrMC{0}'.format(dset))
 
     def selectmc(self, bTrain="", bTest=""): #bTrain=False, bTest=True):
+        li_zenith = ['za05to35', 'za35to50', 'za50to62', 'za62to70']
         if not isinstance(bTrain, bool):
             bTrain=self.getSettingsDC().getBoolTunedTrain() 
         if not isinstance(bTest, bool):
@@ -1160,8 +1244,12 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             pathDirWork = '{0}/{1}'.format(self.getPathDirSuperstarMC(), dset)
             os.chdir(pathDirWork)
             print os.getcwd()
-            bCmd = ['selectmc', '-f', '-q', '-b', '-joinmc', '--pathMC={0}/GA_*{1}*_S_*.root'.format(pathDirWork, self.getZenithCut()), '--out=./', '--outname=GA_za{0}_{1}_S_wr.root'.format(self.getZenithCut(), dset), '--log=LogSelectMc.txt' ]
-            subprocess.call(bCmd)
+            for zset in li_zenith:
+                if len(ls_list('{0}/GA_{1}_*_S_*.root'.format(pathDirWork, zset)))>1:
+                    print zset
+                    bCmd = ['selectmc', '-f', '-q', '-b', '-joinmc', '--pathMC={0}/GA_{1}_*_S_*.root'.format(pathDirWork, zset), '--out=./', '--outname=GA_{0}_{1}_S_wr.root'.format(zset, dset), '--log=LogSelectMc_{0}.txt'.format(zset) ]
+                    print bCmd
+                    subprocess.call(bCmd)
 
     def superstarOFF(self):
         pathDirWork = self.getPathDirSuperstarOFF()
@@ -1177,7 +1265,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
         print aRunUiq
         for runUiq in aRunUiq:
             strCmd = 'superstar -f -q -b --config={0}/superstar.rc --ind1="{1}/M1/20*_M1_{2}*_I_*root" --ind2="{1}/M2/20*_M2_{2}*_I_*.root" --out=./ --log=LogSuperStarOFF_{2}.log --outname=superstar_OFF{2}'.format(self.getPathDirSuperstarMC(), self.getPathDirStarOFF(), runUiq)
-            SubmitPJ(strCmd, pathDirWork, 'SuperstarOFF{0}'.format(runUiq))
+            SubmitPJ(strCmd, pathDirWork, 'SuperstarOFF{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24")
 
     def superstarCrab(self):
         pathDirWork = self.getPathDirSuperstarCrab()
@@ -1193,7 +1281,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
         print aRunUiq
         for runUiq in aRunUiq:
             strCmd = 'superstar -f -q -b --config={0}/superstar.rc --ind1="{1}/M1/20*_M1_{2}*_I_*root" --ind2="{1}/M2/20*_M2_{2}*_I_*.root" --out=./ --log=LogSuperStarCrab_{2}.log --outname=superstar_Crab{2}'.format(self.getPathDirSuperstarMC(), self.getPathDirStarCrab(), runUiq)
-            SubmitPJ(strCmd, pathDirWork, 'SuperstarCrab{0}'.format(runUiq))
+            SubmitPJ(strCmd, pathDirWork, 'SuperstarCrab{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24")
 
     def downloadData(self, password, cDataType="S", verData=1, bPjsub=False):
         strDataType = ""
@@ -1225,9 +1313,220 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             print cDataType, "is not supported."
         #print dateDir.translate(string.maketrans('-', '_'))        
 
+
+def Foam(name_source, li_path_input, path_dir_work='.', strSuffix=''):
+    """For running foam.
+"""
+    SetEnvironForMARS()
+    if strSuffix!='':
+        strSuffix = '_' + strSuffix
+    ninput = len(li_path_input)
+    print ninput, 'input files.'
+    aCmd = [ 'foam', '-b', '-q', '--outputfile={0}/Foam_{1}{2}.root'.format(path_dir_work, name_source, strSuffix)]
+    for path_input in li_path_input:
+        aCmd.append(path_input)
+    print aCmd
+    subprocess.call(aCmd)    
+
+
+def Unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func = [1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=100, eFitMax=10000):
+    """For running CombUnfold.C
+unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func = [1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=150, eFitMax=10000)
+Methods: {1:'Schmelling-GaussNewton', 2:'Tikhonov', 3:'Bertero', 4:'ForwardUnfolding', 5:'Schmelling-MINUIT', 6:'BerteroW'}
+Functions: {1:'PL', 2:'PLwCutoff', 3:'PLwVariableIndex', 4:'PLwVariableIndexAndCutoff', 5:'BPL', 6:'BPLwVariableAlpha1', 7:'BPLwVariableAlpha1AndCutoff'}
+"""
+    if strSuffix!='':
+        strSuffix = '_' + strSuffix
+    #if path_file_csv!="":
+     #   file_csv = open(path_file_csv, 'a')
+
+    ninput = len(li_path_input)
+    print ninput, 'input files.'
+    str_rc_input = """MCombineDataForUnfolding.NumFiles: {0}
+""".format(ninput)
+    for iinput in range(ninput):
+        str_rc_input = str_rc_input + """MCombineDataForUnfolding.InputFiles[{0}]: {1}
+""".format(iinput, li_path_input[iinput])
+    redshift = GetRedshift(name_source)
+    if redshift==0.047:
+        str_rc_redshift = """MCallUnfold.AttFactorFile: {0}/ebl-model/exptau_z{1}_modelFranceschini.dat
+""".format(os.environ['PATH_MARS_BASE'], redshift)
+    os.chdir(path_dir_work)
+
+    LI_NTRIAL = [0, 1]
+    DICT_METHOD = {1:'Schmelling-GaussNewton', 2:'Tikhonov', 3:'Bertero', 4:'ForwardUnfolding', 5:'Schmelling-MINUIT', 6:'BerteroW'}
+    DICT_FUNC = {1:'PL', 2:'PLwCutoff', 3:'PLwVariableIndex', 4:'PLwVariableIndexAndCutoff', 5:'BPL', 6:'BPLwVariableAlpha1', 7:'BPLwVariableAlpha1AndCutoff'}
+    DICT_FUNC_PAR = {1:"""# these are values for Type 1
+#                          f0      alpha     r
+MCallUnfold.Npar: 3
+MCallUnfold.ParamVinit: 0.4e-10     -2.0    1.0
+MCallUnfold.ParamStep:  1.e-12      0.2    0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0    0.0
+MCallUnfold.ParamLimup: 1.e-7      10.0    0.0
+MCallUnfold.ParamFix:   0           0      1
+""",
+2:"""# these are values for Type 2
+#                          f0      alpha    Ecut     r
+MCallUnfold.Npar: 4
+MCallUnfold.ParamVinit: 60.0e-12   -2.0     3.0    0.3
+MCallUnfold.ParamStep:  1.e-12      0.2     0.08   0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0     0.1    0.0
+MCallUnfold.ParamLimup: 1.e-7      10.0   100.     0.0
+MCallUnfold.ParamFix:   0           0         0    1
+""",
+3:"""# these are values for Type 3
+#                          f0         a      b      r
+#                                                   alpha = a+b*log10(E/r)
+MCallUnfold.Npar: 4
+MCallUnfold.ParamVinit: 2.86e-12   -2.212  0.0    0.3
+MCallUnfold.ParamStep:  1.e-12      0.26   0.01   0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0   -2.0    0.0
+MCallUnfold.ParamLimup: 1.e-7      10.0    2.0    0.0
+MCallUnfold.ParamFix:   0           0      0      1
+""",
+4:"""# these are values for Type 4
+#                          f0         a      b    Ecut   r
+#                                                   alpha = a+b*log10(E/r)
+MCallUnfold.Npar: 5
+MCallUnfold.ParamVinit: 8.0e-11    -3.4   -1.46  3.0   0.3
+MCallUnfold.ParamStep:  1.e-12      0.3    0.1   0.1   0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0   -2.0    0.1  0.0
+MCallUnfold.ParamLimup: 1.e-7      10.0    2.0  100.0  0.0
+MCallUnfold.ParamFix:   0           0      0      0    1
+""",
+5:"""# these are values for Type 5
+#                          f0      alpha1 alpha2  E0    beta   r
+MCallUnfold.Npar: 6
+MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    2.0  0.3
+MCallUnfold.ParamStep:  1.e-12      0.2    0.4   0.06   0.6  0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0  -10.0   0.01   0.0  0.0
+MCallUnfold.ParamLimup: 1.e-7      -1.0   -1.0 100.0  100.0  0.0
+MCallUnfold.ParamFix:   0           0      0     0      1    1
+""",
+6:"""# these are values for Type 6
+#                          f0         a   alpha2  E0    beta   b    r
+#                                                   alpha1 = a+b*log10(E/r)
+MCallUnfold.Npar: 7
+MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    6.0  0.0  0.3
+MCallUnfold.ParamStep:  1.e-12      0.2    0.4   0.06   0.6  0.01 0.0
+MCallUnfold.ParamLimlo: 1.e-15    -10.0  -10.0   0.01   0.0 -3.0  0.0
+MCallUnfold.ParamLimup: 1.e-7      -1.0   -1.0 100.0  100.0  3.0  0.0
+MCallUnfold.ParamFix:   0           0      0     1      1    0    1
+""",
+7:"""# these are values for Type 7
+#                          f0   alpha1 alpha2  E0   beta   Ecut   r
+MCallUnfold.Npar: 7
+MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0  0.3
+MCallUnfold.ParamStep:  1.e-12   0.2    0.4   0.06   0.6   10.0  0.0
+MCallUnfold.ParamLimlo: 1.e-15 -10.0  -10.0   0.01   0.0    0.1  0.0
+MCallUnfold.ParamLimup: 1.e-7   -1.0   -1.0 100.0  100.0 1000.0  0.0
+MCallUnfold.ParamFix:   0        0      0     1      1      0    1
+""",
+8:"""# these are values for Type 8
+#                          f0     a   alpha2  E0     beta   Ecut    b    r
+#                                                   alpha1 = a+b*log10(E/r)
+MCallUnfold.Npar: 8
+MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0   0.0  0.3
+MCallUnfold.ParamStep:  1.e-12   0.2    0.4   0.06   0.6    0.1   0.01 0.0
+MCallUnfold.ParamLimlo: 1.e-15 -10.0  -10.0   0.01   0.0    0.1 -10.0  0.0
+MCallUnfold.ParamLimup: 1.e-7   -1.0   -1.0 100.0  100.0 1000.0  10.0  0.0
+MCallUnfold.ParamFix:   0        0      0     1      1      0     1    1
+"""}
+    dict_func_par = {}
+        # Modify RC file
+    str_rc_title = ""
+    str_rc_fitrange = """MCallUnfold.FitMinUser: {0}
+MCallUnfold.FitMaxUser: {1}
+""".format(eFitMin, eFitMax)
+    for nmethod in li_method:
+        dict_func_par[nmethod] = {}
+        str_rc_method = """MCallUnfold.FlagUnfold: {0}
+""".format(nmethod)
+        for nfunc in li_func:
+            print "*", DICT_FUNC[nfunc]
+            dict_func_par[nmethod][nfunc] = []
+            str_rc_func = """MCallUnfold.F1Type: {0}
+""".format(nfunc) + DICT_FUNC_PAR[nfunc]
+            for ntrial in LI_NTRIAL:
+                SetEnvironForMARS("5.34.14")
+                str_rc_range = """MCallUnfold.RangeAutoSelectA: {0}
+MCallUnfold.RangeAutoSelectB: {0}
+""".format(int(ntrial==0))
+                str_rc_energy = ""
+                if ntrial>0:
+                    li_bin_energy = SelectEnergyBins(path_outdata)
+                    str_rc_energy = """MCallUnfold.nminAnmaxA: {0} {1}
+MCallUnfold.nminBnmaxB: {2} {3}
+""".format(li_bin_energy[0][0], li_bin_energy[0][1], li_bin_energy[1][0], li_bin_energy[1][1])
+                str_rc_title = "combunfold{0}_{1}_{2}-{3}GeV_{4}_{5}".format(strSuffix, DICT_FUNC[nfunc], eFitMin, eFitMax, DICT_METHOD[nmethod], ntrial)
+                path_outdata = '{0}/Combined_Data_{1}.root'.format(path_dir_work, str_rc_title)
+                path_unfold_rc1 = '{0}/{1}.rc'.format(path_dir_work, str_rc_title)
+                strRcAdd = str_rc_input + str_rc_fitrange + str_rc_energy + str_rc_redshift + str_rc_range + str_rc_method + str_rc_func
+                file_unfold_rc1 = open(path_unfold_rc1, 'w') 
+                file_unfold_rc1.write(strRcAdd)
+                rcOrig = open('{0}/mrcfiles/combunfold.rc'.format(os.environ['MARSSYS']), 'r')
+                rcCopied = rcOrig.read()
+                file_unfold_rc1.write(rcCopied)
+                rcOrig.close()
+                file_unfold_rc1.close()
+                print '=====', path_unfold_rc1, '====='
+                subprocess.call(['head', '-n', '30', path_unfold_rc1])
+                liCmd = ['root', '{0}/macros/CombUnfold.C("{1}")'.format(os.environ['MARSSYS'], path_unfold_rc1)]
+                #if ntrial==0:
+                liCmd.append('-b')
+                liCmd.append('-q')
+                subprocess.call(liCmd)
+            path_outplots = path_outdata.replace("Combined_Data", "Unfolding_Output", 1)
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveUnfoldPlots.C("{1}", "{2}", "{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], path_outplots, name_source, str_rc_title)])
+
+            file_plots = ROOT.TFile(path_outplots, 'READ')
+            func = file_plots.Get('Func')
+            nFuncPar = func.GetNpar()
+            dict_func_par[nmethod][nfunc].append([func.GetChisquare(), func.GetNDF()])
+            for ipar in range(nFuncPar):
+                dict_func_par[nmethod][nfunc].append([func.GetParameter(ipar), func.GetParError(ipar)])
+                print "Parameter No.{0}: {1} +/- {2}".format(ipar, dict_func_par[nmethod][nfunc][-1][0], dict_func_par[nmethod][nfunc][-1][1])
+            print "Chi^2 / NDF =", dict_func_par[nmethod][nfunc][-1][0], "/", dict_func_par[nmethod][nfunc][-1][1]
+            #if path_file_csv!="":
+             #   str_csv = """{0}, {1}, {2}
+#""".format())
+              #  file_csv.write(
+ #   if path_file_csv!="":
+  #      file_csv.close()
+    return dict_func_par        
+
+
+def SelectEnergyBins(path_file_data):
+    file_data = ROOT.TFile(path_file_data, "READ")
+    print file_data.GetName(), "is opened."
+
+    htg_excess = file_data.Get("ExcessEnergy")
+    print htg_excess.GetName(), "is found."
+    bin_max = htg_excess.GetMaximumBin()
+    binEest_min = bin_max
+    for ibin in range(bin_max, 0, -1):
+        if htg_excess.GetBinContent(ibin)<=0:
+            break
+        else:
+            binEest_min = ibin
+    binEest_max = bin_max
+    for jbin in range(bin_max, htg_excess.GetNbinsX()+1):
+        if htg_excess.GetBinContent(jbin)<=0:
+            break
+        else:
+            binEest_max = jbin
+
+    htg_area = file_data.Get("CollectionArea")
+    print htg_area.GetName(), "is found."
+    binEtrue_min = htg_area.FindFirstBinAbove(10000.)
+    binEtrue_max = htg_area.FindLastBinAbove(10000.)-1
+
+    return [[binEest_min, binEest_max], [binEtrue_min, binEtrue_max]]
+
+
 class SlowMARS(QuickMARS):
     """Class for slow analysis. You should know which data file is corresponding to each cut condition.
-1) sma = SlowMARS(nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False)
+1) sma = SlowMARS(nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False, bTimesOption=True, strTypeMC='', strPeriodMC=''):
 2) sma.makeDirs()
 == No Moon ==
 3) Put your superstar files to the created directories
@@ -1245,7 +1544,8 @@ class SlowMARS(QuickMARS):
 9) sma.superstarMC(bTrain=False, bTest=True)
 10) sma.selectmc(False, True)
 11) sma.melibeaMC(False, True)
-12) sma.flute(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc=True, bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1)
+12) sma.odie(bLE=True, bFR=True, bHE=False)
+13) sma.flute(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc=True, bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1)
 == Decent Moon ==
 3) Put your calibrated and ssignal files to the created directories
 4) sma.ssignal()
@@ -1255,21 +1555,124 @@ class SlowMARS(QuickMARS):
 8) sma.superstar()
 9) sma.superstarMC(bTrain=True, bTest=True)
 10) sma.superstarOFF()
-11) sma.selectmc(True, True)
-12) sma.coach()
-13) sma.melibea(True)
-14) sma.melibeaMC(False, True)
-15) sma.odie(bLE=True, bFR=True, bHE=False)
-16) sma.flute(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc=True, bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1)
+11) sma.quateOFF()
+12) sma.selectmc(True, True)
+13) sma.coach()
+14) sma.melibea(True)
+15) sma.melibeaMC(False, True)
+16) sma.odie(bLE=True, bFR=True, bHE=False)
+17) sma.flute(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc=True, bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1)
 """
-    def __init__(self, nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False):
-        QuickMARS.__init__(self, nameSrc, '1960-01-01', ZenithCut, TransCut9km, CloudCut, naCutDC)
-        self.title = strTitle
-        self.pathDirSpot = '{0}/{1}/{2}/{3}'.format(self.getPathBase(), self.getSourceName(), self.getTitle(), self.nameCfg)
+    def __init__(self, nameSrc, strTitle, ZenithCut='35to50', TransCut9km='55', CloudCut='No', naCutDC=2000., bReducedHV=False, bTimesOption=True, strTypeMC='', strPeriodMC='', bForce=True):
+        SetEnvironForMARS(verRoot = "5.34.24")
+        QuickMARS.__init__(self, nameSrc, '1960-01-01', ZenithCut, TransCut9km, CloudCut, naCutDC, bReducedHV, bTimesOption, strTypeMC, strPeriodMC, bForce)
+        self.titleAnalysis = strTitle
+        self.pathDirSpot = '{0}/{1}/{2}/{3}'.format(self.getPathBase(), self.getSourceName(), self.getTitleAnalysis(), self.getConfigName())
+        self.pathDirAnalysis = '{0}/{1}/{2}'.format(self.getPathBase(), self.getSourceName(), self.getTitleAnalysis())
         self.pathDirCondition = self.getPathDirSpot()
         self.setSubDirs()
 
-def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun="", bPjsub=False):
+
+    def fluteAllRunByRun(self, eth=400, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20"):
+        """Run flute for all runs in the melibea directory run by run.
+        .fluteAllRunByRun(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bCustom=False, fluxMaxInCrab=1.1)
+        """
+        # Make a list of #RUN
+        aFile = glob.glob('{0}/{1}*_Q_*.root'.format(self.getPathDirMelibea(), strFileInitial))
+        aRun = []
+        dictNight = {}
+        for fileQ in aFile:
+            fileR = os.path.basename(fileQ)
+            aRun.append(fileR[9:17])
+            dictNight[aRun[-1]] = fileR[:8]
+        aRunUiq = list(set(aRun))
+        print len(aRunUiq), 'runs.'
+        print aRunUiq
+        for runUiq in aRunUiq:
+            pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, dictNight[runUiq])
+            self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)))
+
+
+    def createAllNightCard(self, eth=400, erangemin=100, erangemax=1000, binning="single-bin", bFoam=True, bCombineLC=True, bUnfoldPL=True):
+        """
+"""
+        # Make a list of nights
+        li_dir_Night = glob.glob('{0}/20??????'.format(self.pathDirAnalysis))
+        print li_dir_Night
+        for path_night in li_dir_Night:
+            print "*", path_night
+            aFile = glob.glob('{0}/Output_flute_*_run????????_{1}GeV_{2}.root'.format(path_night, eth, binning))
+            #aRun = []
+            #dictNight = {}
+            #for fileQ in aFile:
+            #fileR = os.path.basename(fileQ)
+            #aRun.append(fileR[fileR.rindex("_run")+4:fileR.rindex("_run")+12])
+            #dictNight[aRun[-1]] = fileR[:8]
+            #aRunUiq = list(set(aRun))
+            #print len(aRunUiq), 'runs.'
+            #print aRunUiq
+            strNightShort = path_night[-8:]
+            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax)
+            if bFoam==True:
+                night.foam()
+            if bCombineLC==True:
+                night.combineLC()
+            if bUnfoldPL==True:
+                night.unfoldPL()
+
+            
+class NightCard:
+    """1) Combined SED (foam)
+2) Night-range LC
+3) Unfolding with PL
+4) Fine binning LC (future)
+5) Night flux value (future)
+"""
+    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=400, efitmin=150, efitmax=2000):
+        self.NAMESRC = source
+        self.TIMETHISNIGHT = Time(night, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
+        self.TIMETHISNIGHT_SHORT = MakeShortDateExpression(self.TIMETHISNIGHT.value)
+        self.LI_PATH_FLUTEOUTPUT = li_path_fluteoutput
+        self.PATH_OUTPUT = path_output
+        self.EMIN=emin
+        self.EFITMIN=efitmin
+        self.EFITMAX=efitmax
+
+
+    def foam(self):
+        Foam(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT)
+
+
+    def combineLC(self):
+        file_list = open('list_LC_temp.txt', 'w')
+        for file_input in self.LI_PATH_FLUTEOUTPUT:
+            file_list.write("""{0}
+""".format(file_input))
+        file_list.close()
+        SetEnvironForMARS("5.34.14")
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN))])
+
+
+    def unfoldPL(self):
+        dict_par = Unfold(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = [1], li_method = [3, 6], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX)
+        file_csv = open('{0}/CorrFitPars_{1}_{2}_{3}-{4}GeV.csv'.format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.EFITMIN, self.EFITMAX), 'w')
+        str_descript = "#MJD/I:Function/I:Method/I:ChiSquare/F:NDF/I"
+        for ipar in range(8):
+            str_descript = str_descript + ":Par{0}/F:Par{0}Err/F".format(ipar)
+        str_descript = str_descript + """
+"""
+        for key_method, dict_method in dict_par.items():
+            for key_func, li_func in dict_method.items():
+                str_descript = str_descript + "{0},{1},{2}".format(int(self.TIMETHISNIGHT.mjd+0.5), key_func, key_method)
+                for li_par in li_func:
+                    str_descript = str_descript + ",{0},{1}".format(li_par[0],li_par[1]) 
+                str_descript = str_descript + """
+"""
+        file_csv.write(str_descript)
+        file_csv.close()
+
+
+def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun="", bPjsub=False, bMC=False, strRscGrp="A"):
     if path.exists(strDirTgt)==False:
         os.makedirs(strDirTgt)
     os.chdir(strDirTgt)
@@ -1285,6 +1688,15 @@ def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun
             strFind = 'ssignal.*?root'
         else:
             strFind = 'ssignal.*?_M{0}.root'.format(nTel)
+    elif bMC==True:
+        if nTel=="" and nRun=="":
+            strFind = 'GA_.*?_{0}_.*?root'.format(cDataType)
+        elif nTel=="":
+            strFind = 'GA.*?_{1}.*?_{0}_.*?root'.format(cDataType, nRun)
+        elif nRun=="":
+            strFind = 'GA_M{1}_.*?_{0}_.*?root'.format(cDataType, nTel)
+        else:
+            strFind = 'GA_M{1}_{2}.*?_{0}_.*?root'.format(cDataType, nTel, nRun)
     elif nTel=="" and nRun=="":
         strFind = '20\d\d\d\d\d\d.*?_{0}_.*?root'.format(cDataType)
     elif nTel=="":
@@ -1293,6 +1705,7 @@ def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun
         strFind = '20\d\d\d\d\d\d_M{1}_.*?_{0}_.*?root'.format(cDataType, nTel)
     else:
         strFind = '20\d\d\d\d\d\d_M{1}_{2}.*?_{0}_.*?root'.format(cDataType, nTel, nRun)
+
     print "Search for", strFind
     aRootFile = re.findall(strFind, dataHtml)
     aRootFile = list(set(aRootFile))
@@ -1304,28 +1717,29 @@ def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun
             print bCmd
             pRet = subprocess.Popen(bCmd)
             aProc.append(pRet)
+            time.sleep(30)
         else:
             strCmd = 'wget -O{0} -nc -nv --user=MAGIC --password={1} {2}/{3}'.format(rootFile, password, strPicDir, rootFile)
             nameSub,extSub = os.path.splitext( os.path.basename(rootFile) )
-            SubmitPJ(strCmd, strDirTgt, 'wget{0}'.format(nameSub))
+            SubmitPJ(strCmd, strDirTgt, 'wg{0}'.format(nameSub), strRscGrp)
 
 
 def SetEnvironForMARS(verRoot = "5.34.24"):
     if verRoot == "5.34.24":
         os.environ["ROOTSYS"] = "/home/takhsm/app/root_v5.34.24"
-        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-15-8_oldROOT"
-        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_V2-15-8_oldROOT:/home/takhsm/app/oldROOT/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
-#        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/Mars/Mars_V2-15-8_oldROOT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/home/takhsm/app/lib:/home/takhsm/lib/lib"
-        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_V2-15-8_oldROOT:/usr/lib64"
+        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424"
+        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424:/home/takhsm/app/ROOT_v53424/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
+        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424:/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/lib64"
     if verRoot == "5.34.14":
         os.environ["ROOTSYS"] = "/usr/local/gcc473/root_v5.34.14"
         os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-15-8"
-        os.environ["PATH"] = "/usr/local/gcc473/root_v5.34.14/bin:/usr/local/gcc473/bin:/home/takhsm/app/Mars/Mars_V2-15-8:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/lib64/qt-3.3/bin:/usr/local/bin:/bin:/usr/bin"
-        os.environ["LD_LIBRARY_PATH"] = "/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/local/gcc473/root_v5.34.14/lib:/usr/local/gcc473/root_v5.34.14/lib/root:/home/takhsm/app/lib:/usr/local/gcc473/root_v5.34.14:/home/takhsm/app/Mars/Mars_V2-15-8:/home/takhsm/lib/lib"
-        
+        os.environ["PATH"] = "/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/gcc473/root_v5.34.14/bin:/home/takhsm/app/Mars/Mars_V2-15-8:/usr/lib64/qt-3.3/bin:/usr/local/bin:/bin:/usr/bin" #"/home/takhsm/app/Mars/Mars_V2-15-8:/usr/local/gcc473/root_v5.34.14/bin:/usr/local/gcc473/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/lib64/qt-3.3/bin:/usr/local/bin:/bin:/usr/bin"
+        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/lib/lib:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/local/gcc473/root_v5.34.14/lib:/usr/local/gcc473/root_v5.34.14/lib/root:/home/takhsm/app/lib:/usr/local/gcc473/root_v5.34.14:/home/takhsm/app/Mars/Mars_V2-15-8"
+#"/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/local/gcc473/root_v5.34.14/lib:/usr/local/gcc473/root_v5.34.14/lib/root:/home/takhsm/app/lib:/usr/local/gcc473/root_v5.34.14:/home/takhsm/app/Mars/Mars_V2-15-8:/home/takhsm/lib/lib"
+        os.environ["PYTHONPATH"] = "/usr/local/gcc473/ROOT/lib/root:/home/takhsm/app/yaml/lib64/python:/home/takhsm/app/lib/python2.7/site-packages:/home/takhsm/app/Python2/lib/python2.7/site-packages:/home/takhsm/PythonModuleMine"
 def GetRedshift(nameSource):
     if nameSource=='1ES1959+650':
-        return 0.048
+        return 0.047
     else:
         return 0
 
@@ -1347,3 +1761,15 @@ def catchImage(pathImage):
     else:
         subprocess.call(['eog', pathImage])
     
+def getPeriodMC(timeNightIso):
+    """Return an exprssion of MC period corresponding to the input night"""
+    if timeNightIso >= Time('2016-04-29', format='iso', in_subfmt='date', out_subfmt='date', scale='utc'):
+        return 'ST.03.07'
+    elif timeNightIso >= Time('2014-11-24', format='iso', in_subfmt='date', out_subfmt='date', scale='utc'):
+        return 'ST.03.06'
+    elif timeNightIso >= Time('2014-08-31', format='iso', in_subfmt='date', out_subfmt='date', scale='utc'):
+        return 'ST.03.05'
+    else:
+        print 'pMyMarsUtil is not available for this night!!!'
+        return 1
+

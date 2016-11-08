@@ -25,9 +25,9 @@ def GetLC_bins(pathFileIn, minBinWidth=3.0):
         mjdStartOrg = ax[0]-xerr
         mjdStopOrg = ax[0]+xerr
         minItvOrg = 2.*xerr*24.*60.
-        nBinTgt = int(minItvOrg / minBinWidth)
+        nBinTgt = max(1, int(minItvOrg / minBinWidth))
         minBinTgt = minItvOrg/nBinTgt
-        while minBinTgt>=3.5:
+        while minBinTgt>=minBinWidth+0.5:
             nBinTgt = nBinTgt+1
             minBinTgt = minItvOrg/nBinTgt
         print "Divided bin number:", nBinTgt

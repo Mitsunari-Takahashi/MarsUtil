@@ -56,9 +56,31 @@ int SaveFlutePlots(TString nameFileIn, string nameSource, string strSuffix, stri
 		  canClone->Clear();
 		  canClone->cd();
 		  TH1F* hFrame = canClone->DrawFrame(x1Frame, 0.0, x2Frame, TMath::Max(y2Frame*1.1, fluxCrab*fluxMaxInCrab));
+		  TGraphErrors *greBC = (TGraphErrors*)fileIn2->Get("BackgroundCurve");
+		  cout << greBC->GetName() << " is found." << endl;
+		  greBC->SetMarkerColor(kGray+1);
+		  greBC->SetMarkerStyle(5);
+		  greBC->SetLineColor(kGray+1);
+		  greBC->Draw("P same");
+		  TGraph *grUL = (TGraph*)fileIn2->Get("UpperLimLC");
+		  cout << grUL->GetName() << " is found." << endl;		  
+		  if(grUL->GetN()>0)
+		    grUL->Draw("P same");
+		  if(fluxCrab>0)
+		    {
+		      cout << "Crab flux: " << fluxCrab << endl;
+		      lCrab->Draw("same");
+		      txCrab->Draw("same");
+		    }
+		  else
+		    {
+		      cout << "No Crab flux indicator." << endl;
+		    }
 		  TGraphErrors *greLC = (TGraphErrors*)fileIn2->Get("LightCurve");
 		  cout << greLC->GetName() << " is found." << endl;
 		  greLC->Draw("P same");
+		  hFrame->GetXaxis()->SetTitle(greLC->GetXaxis()->GetTitle());
+		  hFrame->GetYaxis()->SetTitle(greLC->GetYaxis()->GetTitle());
 		  if(greLC->GetN()>1)
 		    {
 		      TFitResultPtr r=greLC->Fit("pol0","S");
@@ -76,27 +98,6 @@ int SaveFlutePlots(TString nameFileIn, string nameSource, string strSuffix, stri
 		      cout << "Chi^2=" << r->Chi2() << ", Ndf=" << r->Ndf()<< endl;
 		    }
 		  canClone->RedrawAxis();
-		  TGraphErrors *greBC = (TGraphErrors*)fileIn2->Get("BackgroundCurve");
-		  cout << greBC->GetName() << " is found." << endl;
-		  greBC->SetMarkerColor(kGray+1);
-		  greBC->SetLineColor(kGray+1);
-		  greBC->Draw("P same");
-		  TGraph *grUL = (TGraph*)fileIn2->Get("UpperLimLC");
-		  cout << grUL->GetName() << " is found." << endl;		  
-		  if(grUL->GetN()>0)
-		    grUL->Draw("P same");
-		  hFrame->GetXaxis()->SetTitle(greLC->GetXaxis()->GetTitle());
-		  hFrame->GetYaxis()->SetTitle(greLC->GetYaxis()->GetTitle());
-		  if(fluxCrab>0)
-		    {
-		      cout << "Crab flux: " << fluxCrab << endl;
-		      lCrab->Draw("same");
-		      txCrab->Draw("same");
-		    }
-		  else
-		    {
-		      cout << "No Crab flux indicator." << endl;
-		    }
 		  canClone->SaveAs(nameFig.c_str());
 		  if(greLC->GetN()>1)
 		    delete txFit;

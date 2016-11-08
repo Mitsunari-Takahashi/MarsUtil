@@ -3,51 +3,63 @@ Get the pedestal DC values (mean and rms).
 GetIntPedEx("ssignal1_M1.root ssignal2_M1.root ssignal3_M1.root ...", "Path of output rc file", "Suffix for png file")
 This method creates a combined plot of your files and outputs a rc file for star.
 *****************************************/
-
-int GetIntPedEx(TString inputfiles = "", string strPathRC="", string strSuffix="")
+#include "Riostream.h"
+#include <iostream>
+#include <fstream>
+#include <TCanvas.h>
+#include <TFile.h>
+#include <TGraphErrors.h>
+#include <TMultiGraph.h>
+#include <TH1D.h>
+int GetIntPedEx(string inputfiles = "", string strPathRC="", string strSuffix="")
 {
-  TObjArray* objarray = inputfiles.Tokenize(" ");
-  const Int_t nFile = objarray->GetEntries();
-  TObjString* ostr;
-  TFile* fileIn[nFile];
-  MStatusArray* sa[nFile];
-  string nameFileIn[nFile];
-  TCanvas* can[nFile];
-  TPad* padMean[nFile];
-  TPad* padRms[nFile];
-  TGraphErrors* greMean[nFile];
-  TGraphErrors* greRms[nFile];
+  TFile* fileList = new TFile(inputfiles.c_str(), "READ");
+  cout << fileList->GetName() << " is opened." << endl;
+  TTree *trList = (TTree*)fileList->Get("ListSsignal");
+  cout << trList->GetName() << " is found." << endl;
+  TString* strPathSsignal;
+  trList->SetBranchAddress("PathListSsignal", &strPathSsignal);
+
+  TFile* fileIn;//[nFile];
+  MStatusArray* sa;//[nFile];
+  string nameFileIn;//[nFile];
+  TCanvas* can;//[nFile];
+  TPad* padMean;//[nFile];
+  TPad* padRms;//[nFile];
+  TGraphErrors* greMean;//[nFile];
+  TGraphErrors* greRms;//[nFile];
   TMultiGraph *mgrMean = new TMultiGraph("mgrMean", "IntPedExtr_Mean");
   TMultiGraph *mgrRms = new TMultiGraph("mgrRMs", "IntPedExtr_RMS");
-  for(Int_t iFile=0; iFile<nFile; iFile++)
+  for(Int_t iFile=0; iFile<trList->GetEntries(); iFile++)
     {
-      ostr = (TObjString*) objarray->At(iFile);
-      fileIn[iFile] = new TFile(ostr->GetString().Data());
-      cout << fileIn[iFile]->GetName() << " is opened." << endl;
-      sa[iFile] = (MStatusArray*)fileIn[iFile]->Get("MStatusDisplay");
-      cout << sa[iFile]->GetName() << " is found." << endl;
+      trList->GetEntry(iFile);
+      fileIn = new TFile(strPathSsignal->Data(), "READ");
+      cout << fileIn->GetName() << " is opened." << endl;
+      sa = (MStatusArray*)fileIn->Get("MStatusDisplay");
+      cout << sa->GetName() << " is found." << endl;
       Int_t iAt=0; 
       Bool_t bFound=false;
-      while(bFound==false && iAt<sa[iFile]->GetEntries())
-	{
-	  can[iFile] = (TCanvas*)sa[iFile]->At(iAt);
-	  string strt = can[iFile]->GetTitle();
-	  if(strt=="IntPedEx")
-	    {
-	      bFound = true;
-	      can[iFile]->SetName(Form("%s%d", can[iFile]->GetName(), iFile));
-	      can[iFile]->Draw();
-	      padMean[iFile] = (TPad*)can[iFile]->cd(1);
-	      padRms[iFile] = (TPad*)can[iFile]->cd(2);
-	      greMean[iFile] = (TGraphErrors*)padMean[iFile]->FindObject("");
-	      greMean[iFile]->SetName(Form("greMean%d", iFile));
-	      greRms[iFile] = (TGraphErrors*)padRms[iFile]->FindObject("");
-	      greRms[iFile]->SetName(Form("greRms%d", iFile));
-	    }
-	  iAt++;
-	}
-      mgrMean->Add(greMean[iFile]);
-      mgrRms->Add(greRms[iFile]);
+      while(bFound==false && iAt<sa->GetEntries())
+      	{
+      	  can = (TCanvas*)sa->At(iAt);
+      	  string strt = can->GetTitle();
+      	  if(strt=="IntPedEx")
+      	    {
+      	      bFound = true;
+      	      can->SetName(Form("%s%d", can->GetName(), iFile));
+      	      can->Draw();
+      	      padMean = (TPad*)can->cd(1);
+      	      padRms = (TPad*)can->cd(2);
+      	      greMean = (TGraphErrors*)padMean->FindObject("");
+      	      greMean->SetName(Form("greMean%d", iFile));
+      	      greRms = (TGraphErrors*)padRms->FindObject("");
+      	      greRms->SetName(Form("greRms%d", iFile));
+      	    }
+      	  iAt++;
+      	}
+      mgrMean->Add(greMean);
+      mgrRms->Add(greRms);
+      fileIn->Close();
     }
   TCanvas *cAll = new TCanvas("cAll", "IntPedEx_all", 1200, 600);
   cAll->Divide(1,2);
@@ -68,8 +80,7 @@ int GetIntPedEx(TString inputfiles = "", string strPathRC="", string strSuffix="
    ofs << "MJStar.MAddNoise.NewNoiseMean: " << mgrMean->GetFunction("pol0")->GetParameter(0) << endl;
   ofs << "MJStar.MAddNoise.NewNoiseRMS: " << mgrRms->GetFunction("pol0")->GetParameter(0) << endl;
   ofs.close();
-
+  //  fclose( fp );
+  delete fileList;
   delete cAll;
-  for(Int_t jFile=0; jFile<nFile; jFile++)
-    delete fileIn[jFile];
 }
