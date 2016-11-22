@@ -8,7 +8,7 @@ SlowMARS: For analysis in detail. You should know your data's DC level.
 from astropy.time import Time
 import time
 import ROOT
-from ROOT import std
+from ROOT import std, TParameter
 import os
 import os.path as path
 import shutil
@@ -1167,7 +1167,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             for runUiq in aRunUiq:
                 #aCmd = [ 'star', '-b', '-f', '--config={0}/{1}/star_{2}_noise{3}.rc'.format(self.getPathDirStarMC(), tel, tel, self.getTimeThisNight('short')), '--ind={0}/standard/OFF/calibrated/{1}/20*_{2}_{3}*_Y_*.root'.format(self.getPathBase(), tel, tel, runUiq), '--out=./', '--log=LogStarOFF{0}.txt'.format(runUiq) ]
                 strCmd = 'star -f -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/za{5}/20*_{1}_{4}*_Y_*.root" --out=./ --log=LogStarOFF{4}.txt --outname=starOFF{4}'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirCalibratedOFF(), runUiq, self.getZenithCut())
-                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='SrO{0}{1}'.format(runUiq[-2:, tel]))
+                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='SrO{0}{1}'.format(runUiq[-2:], tel))
 
     def starCrab(self, aPathCalibratedCrab):
         pathDirWork = ''
@@ -1329,7 +1329,51 @@ def Foam(name_source, li_path_input, path_dir_work='.', strSuffix=''):
     subprocess.call(aCmd)    
 
 
-def Unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func = [1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=100, eFitMax=10000):
+def Fold(name_source, path_file_input, path_dir_work='.', strSuffix='', li_func=['PWL', 'LP', 'EPWL', 'ELP'], eFitMin=100, eFitMax=100000, eNorm=400):
+    """For running fold. 
+Available fitting function: PWL, LP, EPWL, ELP, SEPWL
+The input is one output file of flute or foam.
+"""
+    os.chdir(path_dir_work)
+    if strSuffix!='':
+        strSuffix = '_' + strSuffix
+    dict_func_par = {}
+    dict_chiSq_red = {}
+    chiSq_ed_min = float(sys.maxsize)
+    func_chiSq_ed_min = ''
+    for func in li_func:
+        print '----------'
+        print func
+        dict_func_par[func] = [] # Add an empty list to the mother dictionary
+        SetEnvironForMARS("5.34.24")
+        str_title_output = '{0}_{1}_{2}-{3}GeV'.format(strSuffix, func, eFitMin, eFitMax)
+        aCmd = ['fold', '-b', '--inputfile={0}'.format(path_file_input), '--function={0}'.format(func), '--log=Log_Fold_{0}{1}.log'.format(name_source, str_title_output), '--redshift={0}'.format(GetRedshift(name_source)), '--minEest={0}'.format(eFitMin), '--maxEest={0}'.format(eFitMax), '--NormalizationE={0}'.format(eNorm)]
+        print aCmd
+        subprocess.call(aCmd)
+        SetEnvironForMARS("5.34.14")
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/SaveFoldPlots.C("{1}/Status_fold.root", "{2}", "{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], path_dir_work, name_source, str_title_output)])
+        shutil.move('{0}/Output_fold.root'.format(path_dir_work), '{0}/Output_fold_{1}{2}.root'.format(path_dir_work, name_source, str_title_output))
+        shutil.move('{0}/Status_fold.root'.format(path_dir_work), '{0}/Status_fold_{1}{2}.root'.format(path_dir_work, name_source, str_title_output))
+        file_Fold_out = ROOT.TFile('{0}/Output_fold_{1}{2}.root'.format(path_dir_work, name_source, str_title_output), 'READ')
+        chiSq = file_Fold_out.Get('chisquare')
+        ndof = file_Fold_out.Get('ndof')
+        sed = file_Fold_out.Get('SpectralModel')
+        dict_chiSq_red[func] = chiSq.GetVal()/ndof.GetVal()
+        if dict_chiSq_red[func] < chiSq_ed_min:
+            chiSq_ed_min = dict_chiSq_red[func]
+            func_chiSq_ed_min = func
+        print 'Chi^2/ndof =', dict_chiSq_red[func]
+        dict_func_par[func].append([chiSq.GetVal(), ndof.GetVal()])
+        for jpar in range(sed.GetNpar()):
+            dict_func_par[func].append([sed.GetParameter(jpar), sed.GetParError(jpar)])
+    print '=========='
+    print dict_chiSq_red
+    print 'Minimum chi^2/ndof function:', func_chiSq_ed_min
+    print 'Chi^2/ndof =', chiSq_ed_min
+    return dict_func_par
+
+
+def Unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func=[1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=100, eFitMax=10000, deabsorption=True):
     """For running CombUnfold.C
 unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func = [1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=150, eFitMax=10000)
 Methods: {1:'Schmelling-GaussNewton', 2:'Tikhonov', 3:'Bertero', 4:'ForwardUnfolding', 5:'Schmelling-MINUIT', 6:'BerteroW'}
@@ -1348,7 +1392,8 @@ Functions: {1:'PL', 2:'PLwCutoff', 3:'PLwVariableIndex', 4:'PLwVariableIndexAndC
         str_rc_input = str_rc_input + """MCombineDataForUnfolding.InputFiles[{0}]: {1}
 """.format(iinput, li_path_input[iinput])
     redshift = GetRedshift(name_source)
-    if redshift==0.047:
+    str_rc_redshift = ""
+    if redshift==0.047 and deabsorption==True:
         str_rc_redshift = """MCallUnfold.AttFactorFile: {0}/ebl-model/exptau_z{1}_modelFranceschini.dat
 """.format(os.environ['PATH_MARS_BASE'], redshift)
     os.chdir(path_dir_work)
@@ -1359,7 +1404,7 @@ Functions: {1:'PL', 2:'PLwCutoff', 3:'PLwVariableIndex', 4:'PLwVariableIndexAndC
     DICT_FUNC_PAR = {1:"""# these are values for Type 1
 #                          f0      alpha     r
 MCallUnfold.Npar: 3
-MCallUnfold.ParamVinit: 0.4e-10     -2.0    1.0
+MCallUnfold.ParamVinit: 0.4e-10     -2.0    0.4
 MCallUnfold.ParamStep:  1.e-12      0.2    0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0    0.0
 MCallUnfold.ParamLimup: 1.e-7      10.0    0.0
@@ -1368,7 +1413,7 @@ MCallUnfold.ParamFix:   0           0      1
 2:"""# these are values for Type 2
 #                          f0      alpha    Ecut     r
 MCallUnfold.Npar: 4
-MCallUnfold.ParamVinit: 60.0e-12   -2.0     3.0    0.3
+MCallUnfold.ParamVinit: 60.0e-12   -2.0     3.0    0.4
 MCallUnfold.ParamStep:  1.e-12      0.2     0.08   0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0     0.1    0.0
 MCallUnfold.ParamLimup: 1.e-7      10.0   100.     0.0
@@ -1378,7 +1423,7 @@ MCallUnfold.ParamFix:   0           0         0    1
 #                          f0         a      b      r
 #                                                   alpha = a+b*log10(E/r)
 MCallUnfold.Npar: 4
-MCallUnfold.ParamVinit: 2.86e-12   -2.212  0.0    0.3
+MCallUnfold.ParamVinit: 2.86e-12   -2.212  0.0    0.4
 MCallUnfold.ParamStep:  1.e-12      0.26   0.01   0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0   -2.0    0.0
 MCallUnfold.ParamLimup: 1.e-7      10.0    2.0    0.0
@@ -1388,7 +1433,7 @@ MCallUnfold.ParamFix:   0           0      0      1
 #                          f0         a      b    Ecut   r
 #                                                   alpha = a+b*log10(E/r)
 MCallUnfold.Npar: 5
-MCallUnfold.ParamVinit: 8.0e-11    -3.4   -1.46  3.0   0.3
+MCallUnfold.ParamVinit: 8.0e-11    -3.4   -1.46  3.0   0.4
 MCallUnfold.ParamStep:  1.e-12      0.3    0.1   0.1   0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0   -2.0    0.1  0.0
 MCallUnfold.ParamLimup: 1.e-7      10.0    2.0  100.0  0.0
@@ -1397,7 +1442,7 @@ MCallUnfold.ParamFix:   0           0      0      0    1
 5:"""# these are values for Type 5
 #                          f0      alpha1 alpha2  E0    beta   r
 MCallUnfold.Npar: 6
-MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    2.0  0.3
+MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    2.0  0.4
 MCallUnfold.ParamStep:  1.e-12      0.2    0.4   0.06   0.6  0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0  -10.0   0.01   0.0  0.0
 MCallUnfold.ParamLimup: 1.e-7      -1.0   -1.0 100.0  100.0  0.0
@@ -1407,7 +1452,7 @@ MCallUnfold.ParamFix:   0           0      0     0      1    1
 #                          f0         a   alpha2  E0    beta   b    r
 #                                                   alpha1 = a+b*log10(E/r)
 MCallUnfold.Npar: 7
-MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    6.0  0.0  0.3
+MCallUnfold.ParamVinit: 2.7e-11    -2.35 -3.51   0.6    6.0  0.0  0.4
 MCallUnfold.ParamStep:  1.e-12      0.2    0.4   0.06   0.6  0.01 0.0
 MCallUnfold.ParamLimlo: 1.e-15    -10.0  -10.0   0.01   0.0 -3.0  0.0
 MCallUnfold.ParamLimup: 1.e-7      -1.0   -1.0 100.0  100.0  3.0  0.0
@@ -1416,7 +1461,7 @@ MCallUnfold.ParamFix:   0           0      0     1      1    0    1
 7:"""# these are values for Type 7
 #                          f0   alpha1 alpha2  E0   beta   Ecut   r
 MCallUnfold.Npar: 7
-MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0  0.3
+MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0  0.4
 MCallUnfold.ParamStep:  1.e-12   0.2    0.4   0.06   0.6   10.0  0.0
 MCallUnfold.ParamLimlo: 1.e-15 -10.0  -10.0   0.01   0.0    0.1  0.0
 MCallUnfold.ParamLimup: 1.e-7   -1.0   -1.0 100.0  100.0 1000.0  0.0
@@ -1426,7 +1471,7 @@ MCallUnfold.ParamFix:   0        0      0     1      1      0    1
 #                          f0     a   alpha2  E0     beta   Ecut    b    r
 #                                                   alpha1 = a+b*log10(E/r)
 MCallUnfold.Npar: 8
-MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0   0.0  0.3
+MCallUnfold.ParamVinit: 2.7e-11 -2.35 -3.51   0.6    6.0    3.0   0.0  0.4
 MCallUnfold.ParamStep:  1.e-12   0.2    0.4   0.06   0.6    0.1   0.01 0.0
 MCallUnfold.ParamLimlo: 1.e-15 -10.0  -10.0   0.01   0.0    0.1 -10.0  0.0
 MCallUnfold.ParamLimup: 1.e-7   -1.0   -1.0 100.0  100.0 1000.0  10.0  0.0
@@ -1454,7 +1499,7 @@ MCallUnfold.RangeAutoSelectB: {0}
 """.format(int(ntrial==0))
                 str_rc_energy = ""
                 if ntrial>0:
-                    li_bin_energy = SelectEnergyBins(path_outdata)
+                    li_bin_energy = SelectEnergyBins(path_outdata, eFitMin, eFitMax)
                     str_rc_energy = """MCallUnfold.nminAnmaxA: {0} {1}
 MCallUnfold.nminBnmaxB: {2} {3}
 """.format(li_bin_energy[0][0], li_bin_energy[0][1], li_bin_energy[1][0], li_bin_energy[1][1])
@@ -1496,30 +1541,41 @@ MCallUnfold.nminBnmaxB: {2} {3}
     return dict_func_par        
 
 
-def SelectEnergyBins(path_file_data):
+def SelectEnergyBins(path_file_data, erangemin=0, erangemax=1000000):
+    """Return a list of Eest and Etrue bin boundaries for the second CombUnfold.C run.
+Input the output file of the first run.
+"""
     file_data = ROOT.TFile(path_file_data, "READ")
     print file_data.GetName(), "is opened."
 
+    #Eest
     htg_excess = file_data.Get("ExcessEnergy")
     print htg_excess.GetName(), "is found."
     bin_max = htg_excess.GetMaximumBin()
+    # Lower bound
     binEest_min = bin_max
     for ibin in range(bin_max, 0, -1):
         if htg_excess.GetBinContent(ibin)<=0:
             break
         else:
             binEest_min = ibin
+    binEest_min = max(binEest_min, htg_excess.FindBin(erangemin)-2) # No events or outside of your energy range
+    # Upper bound
     binEest_max = bin_max
     for jbin in range(bin_max, htg_excess.GetNbinsX()+1):
         if htg_excess.GetBinContent(jbin)<=0:
             break
         else:
             binEest_max = jbin
+    binEest_max = min(binEest_max, htg_excess.FindBin(erangemax)+2) # No events or outside of your energy range
 
+    #Etrue
     htg_area = file_data.Get("CollectionArea")
     print htg_area.GetName(), "is found."
-    binEtrue_min = htg_area.FindFirstBinAbove(10000.)
-    binEtrue_max = htg_area.FindLastBinAbove(10000.)-1
+    binEtrue_min = max(htg_area.FindFirstBinAbove(10000.), htg_area.FindBin(erangemin)-1)
+    binEtrue_max = min(htg_area.FindLastBinAbove(10000.)-1, htg_area.FindBin(erangemax)+1)
+    #binEtrue_min = htg_area.FindFirstBinAbove(10000.)
+    #binEtrue_max = htg_area.FindLastBinAbove(10000.)-1
 
     return [[binEest_min, binEest_max], [binEtrue_min, binEtrue_max]]
 
@@ -1593,7 +1649,7 @@ class SlowMARS(QuickMARS):
             self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)))
 
 
-    def createAllNightCard(self, eth=400, erangemin=100, erangemax=1000, binning="single-bin", bFoam=True, bCombineLC=True, bUnfoldPL=True):
+    def createAllNightCard(self, eth=400, erangemin=100, erangemax=1000, binning="single-bin", bFoam=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True):
         """
 """
         # Make a list of nights
@@ -1612,13 +1668,15 @@ class SlowMARS(QuickMARS):
             #print len(aRunUiq), 'runs.'
             #print aRunUiq
             strNightShort = path_night[-8:]
-            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax)
+            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax, bin_src=binning)
             if bFoam==True:
                 night.foam()
             if bCombineLC==True:
                 night.combineLC()
             if bUnfoldPL==True:
                 night.unfoldPL()
+            if bFoldPL==True:
+                night.foldPL()
 
             
 class NightCard:
@@ -1628,19 +1686,24 @@ class NightCard:
 4) Fine binning LC (future)
 5) Night flux value (future)
 """
-    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=400, efitmin=150, efitmax=2000):
+    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=400, efitmin=100, efitmax=10000, bin_src="single-bin", enorm=400):
         self.NAMESRC = source
         self.TIMETHISNIGHT = Time(night, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
         self.TIMETHISNIGHT_SHORT = MakeShortDateExpression(self.TIMETHISNIGHT.value)
         self.LI_PATH_FLUTEOUTPUT = li_path_fluteoutput
+        self.NFLUTEOUTPUT = len(self.LI_PATH_FLUTEOUTPUT)
         self.PATH_OUTPUT = path_output
         self.EMIN=emin
         self.EFITMIN=efitmin
         self.EFITMAX=efitmax
+        self.ENORM=enorm
+        self.BINNSRC=bin_src
+        self.PATH_FOAMOUT = "{0}/Foam_{1}_{2}.root".format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT)
 
 
     def foam(self):
-        Foam(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT)
+        if self.NFLUTEOUTPUT>1:
+            Foam(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT)
 
 
     def combineLC(self):
@@ -1650,14 +1713,35 @@ class NightCard:
 """.format(file_input))
         file_list.close()
         SetEnvironForMARS("5.34.14")
-        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN))])
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV_{5}.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN), self.BINNSRC)])
+
+
+    def foldPL(self):
+        if self.NFLUTEOUTPUT>1:
+            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.PATH_FOAMOUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX, eNorm=self.ENORM)
+        else:
+            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.LI_PATH_FLUTEOUTPUT[0], path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX)
+        file_csv = open('{0}/FoldFitPars_{1}_{2}_{3}-{4}GeV_PWL.csv'.format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.EFITMIN, self.EFITMAX), 'w')
+        str_descript = "#MJD/I:Function/C:ChiSquare/F:NDF/I"
+        for ipar in range(2):
+            str_descript = str_descript + ":Par{0}/F:Par{0}Err/F".format(ipar)
+        str_descript = str_descript + """
+"""
+        for key_func, li_func in dict_par.items():
+            str_descript = str_descript + "{0},{1}".format(int(self.TIMETHISNIGHT.mjd+0.5), key_func)
+            for li_par in li_func:
+                str_descript = str_descript + ",{0},{1}".format(li_par[0],li_par[1]) 
+            str_descript = str_descript + """
+"""
+        file_csv.write(str_descript)
+        file_csv.close()
 
 
     def unfoldPL(self):
         dict_par = Unfold(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = [1], li_method = [3, 6], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX)
-        file_csv = open('{0}/CorrFitPars_{1}_{2}_{3}-{4}GeV.csv'.format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.EFITMIN, self.EFITMAX), 'w')
+        file_csv = open('{0}/CorrFitPars_{1}_{2}_{3}-{4}GeV_PWL.csv'.format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.EFITMIN, self.EFITMAX), 'w')
         str_descript = "#MJD/I:Function/I:Method/I:ChiSquare/F:NDF/I"
-        for ipar in range(8):
+        for ipar in range(3):
             str_descript = str_descript + ":Par{0}/F:Par{0}Err/F".format(ipar)
         str_descript = str_descript + """
 """
@@ -1727,9 +1811,10 @@ def DownloadPicData(strPicDir, strDirTgt, password, cDataType="S", nTel="", nRun
 def SetEnvironForMARS(verRoot = "5.34.24"):
     if verRoot == "5.34.24":
         os.environ["ROOTSYS"] = "/home/takhsm/app/root_v5.34.24"
-        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424"
-        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424:/home/takhsm/app/ROOT_v53424/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
-        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424:/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/lib64"
+#        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424"
+        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-17-0_ROOT53424"
+        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_V2-17-0_ROOT53424:/home/takhsm/app/ROOT_v53424/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
+        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_V2-17-0_ROOT53424:/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/lib64"
     if verRoot == "5.34.14":
         os.environ["ROOTSYS"] = "/usr/local/gcc473/root_v5.34.14"
         os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-15-8"
