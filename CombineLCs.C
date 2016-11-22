@@ -33,7 +33,7 @@ int CombineLCs(string inputfiles, string strPathFileOut, string strSuffix="", Bo
   TGraphErrors *greBC;
   std::ifstream ifs(inputfiles.c_str());
   char str[256];
-  string strStatus;
+  TString strStatus;
   if (ifs.fail())
     {
       std::cerr << "Failed." << std::endl;
@@ -73,10 +73,10 @@ int CombineLCs(string inputfiles, string strPathFileOut, string strSuffix="", Bo
 
       delete fin;
       strStatus = str;
-      strStatus = strStatus.replace(0, 6, "Status");
+      strStatus = strStatus.ReplaceAll("Output", "Status");
     }
 
-  TFile *fileStatus = new TFile(strStatus.c_str(), "READ");
+  TFile *fileStatus = new TFile(strStatus.Data(), "READ");
   cout << fileStatus->GetName() << " is opened." << endl;
   MStatusArray* sa = (MStatusArray*)fileStatus->Get("MStatusDisplay");
   cout << sa->GetName() << " is found." << endl;
