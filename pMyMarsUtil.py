@@ -22,6 +22,8 @@ from pGetLC_bins import GetLC_bins
 from pSubmitPJ import *
 from Fermi.pLsList import ls_list
 from pCommon import *
+from pShellCom import *
+
 
 class SettingsDC:
     """Class for settings of quate, image cleaning and tuning of MC, depending on DC.
@@ -863,7 +865,7 @@ Odie.maxZenith: {1}
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, pathCustomBinRefer=""):
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer=""):
         SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
@@ -907,11 +909,14 @@ flute.maxZd: {1}
 """.format(assumedSpectrum)
         
         if nebin==0:
-            nebin = int((log10(emax) - log10(emin)) * 10)
+            nebin = int((log10(emax) - log10(emin)) * 6)
         strRcEnergyRange = """flute.nBinsEnergyEst: {0}
 flute.minEnergyEst: {1}
 flute.maxEnergyEst: {2}
 """.format(nebin, emin, emax)
+
+        strRcNbinAz = """flute.nBinsAz: {0}
+""".format(nbinAz)
 
         pathDirWork = ''
         aBinning = []
@@ -936,12 +941,17 @@ flute.maxEnergyEst: {2}
             strRcLc = """flute.EminLC: {0}
 flute.LCbinning: {1}
 """.format(eth, wise)
-            strOutput = '{0}_{1}{2}GeV_{3}'.format(self.getConfigName(), strOutDesignate, int(eth), wise)
+            strSuffixAzBin = ''
+            if nbinAz != 1:
+                strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
+            strOutput = '{0}_{1}{2}GeV{3}_{4}'.format(self.getConfigName(), strOutDesignate, int(eth), strSuffixAzBin, wise)
             if wise=="custom":
                 if pathCustomBinRefer=="":
-                    aBinCustom = GetLC_bins("{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth)))
-                else:
-                    aBinCustom = GetLC_bins(pathCustomBinRefer) #Output_flute file
+                    pathCustomBinRefer = "{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth))
+                if path.exists(pathCustomBinRefer)==False:
+                    print "{0} does not exist!!!".format(pathCustomBinRefer)
+                aBinCustom = GetLC_bins(pathCustomBinRefer) #Output_flute file
+
                 strRcLc = strRcLc + """
 flute.LCbinlowedge: {0}""".format(aBinCustom[0][0])
                 for itv in aBinCustom[0][1:]:
@@ -953,7 +963,7 @@ flute.LCbinupedge: {0}""".format(aBinCustom[1][0])
                 strRcLc = strRcLc + """
 """
             # Modify RC file
-            strRcAdd = strRcData + strRcZd + strRcEnergyRange + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
+            strRcAdd = strRcData + strRcZd + strRcEnergyRange + strRcNbinAz + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
 #            pathRcNew = './flute_{0}_{1}{2}GeV_{3}.rc'.format(self.getConfigName(), strOutDesignate, int(eth), wise)
             pathRcNew = './flute_{0}.rc'.format(strOutput)
             rcNew = open(pathRcNew, 'w') 
@@ -1121,13 +1131,20 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
                 pathDirWork = '{0}/{1}/{2}'.format(self.getPathDirStarMC(), tel, dset)
                 os.chdir(pathDirWork)
                 print os.getcwd()
-                strCmd = 'star -mc -b -f --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/MC/{4}/calibrated/za{5}/{1}/GA_*_Y_*.root" --out=./ --log=LogStarMC_{4}_{1}.txt'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirMC(), dset, self.getZenithCut())
+                strCmd = 'star -mc -b -f --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/MC/{4}/calibrated/za{5}/{1}/GA_*_Y_*.root" --out=./ --log=LogStarMC_{4}_{1}.log'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirMC(), dset, self.getZenithCut())
                 SubmitPJ(strCmd, pathDirWork, 'StarMC_{0}_{1}'.format(dset, tel), strRscGrp="B", verROOT="5.34.24", jobname='SrM{0}{1}'.format(dset[:2], tel))
                 # aCmd = [ 'star', '-b', '-f', '-mc', '--config=../star_{0}_noise{1}.rc'.format(tel, self.getTimeThisNight('short')), '--ind={0}/standard/MC/ST.03.06-Mmcs699/{1}/calibrated/{2}/GA_*_Y_*.root'.format(self.getPathBase(), dset, tel), '--out=./', '--log=LogStarMC.txt' ]
                 # print aCmd
                 # subprocess.call(aCmd)
-
         #subprocess.call( 'source /Users/Mitsunari/.bash_profile', shell=True ) # Back to ROOT 5.34.20
+
+    def tailStarMC(self, tel='M2', dataset='TEST', nLine=20):
+        """Read the tail of star MC log file for trailing the progress.
+sma.tailStarMC('M1 or M2', 'TRAIN or TEST', #Line to be showed)       
+"""
+        pathLogFile = '{0}/{1}/{2}/LogStarMC_{2}_{1}.log'.format(self.getPathDirStarMC(), tel, dataset)
+        tailFile(pathLogFile, nLine)
+
 
     def star(self):
         pathDirWork = ''
@@ -1148,7 +1165,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             print os.getcwd()
             for runUiq in aRunUiq:
                 strCmd = 'star -b -f --config={0}/{1}/star_{1}_noise{2}.rc --ind="{3}/{1}/20*_{1}_{4}*_Y_*.root" --out=./ --outname={4} --log=LogStar{4}.txt'.format(self.getPathDirStar(), tel, self.getTitleAnalysis(), self.getPathDirCalibrated(), runUiq)
-                SubmitPJ(strCmd, pathDirWork, 'Star{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='Sr{0}{1}'.format(runUiq[-3:], tel))
+                SubmitPJ(strCmd, pathDirWork, 'Star{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='Sr{0}{1}'.format(runUiq[-6:], tel))
 
     def starOFF(self):
         pathDirWork = ''
@@ -1166,8 +1183,8 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             print os.getcwd()
             for runUiq in aRunUiq:
                 #aCmd = [ 'star', '-b', '-f', '--config={0}/{1}/star_{2}_noise{3}.rc'.format(self.getPathDirStarMC(), tel, tel, self.getTimeThisNight('short')), '--ind={0}/standard/OFF/calibrated/{1}/20*_{2}_{3}*_Y_*.root'.format(self.getPathBase(), tel, tel, runUiq), '--out=./', '--log=LogStarOFF{0}.txt'.format(runUiq) ]
-                strCmd = 'star -f -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/za{5}/20*_{1}_{4}*_Y_*.root" --out=./ --log=LogStarOFF{4}.txt --outname=starOFF{4}'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirCalibratedOFF(), runUiq, self.getZenithCut())
-                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='SrO{0}{1}'.format(runUiq[-2:], tel))
+                strCmd = 'star -f -b --config={0}/{1}/star_{1}_noise{2}_MC.rc --ind="{3}/{1}/za{5}/20*_{1}_{4}*_Y_*.root" --out=./ --log=LogStarOFF{4}.txt --outname=OFF{4}'.format(self.getPathDirStarMC(), tel, self.getTitleAnalysis(), self.getPathDirCalibratedOFF(), runUiq, self.getZenithCut())
+                SubmitPJ(strCmd, pathDirWork, 'StarOFF{0}{1}'.format(runUiq, tel), strRscGrp="A", verROOT="5.34.24", jobname='SrF{0}{1}'.format(runUiq[-5:], tel))
 
     def starCrab(self, aPathCalibratedCrab):
         pathDirWork = ''
@@ -1204,7 +1221,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
         print aRunUiq
         for runUiq in aRunUiq:
             strCmd = 'superstar -f -q -b --config={0}/superstar.rc --ind1="{1}/M1/20*_M1_{2}*_I_*root" --ind2="{1}/M2/20*_M2_{2}*_I_*.root" --out=./ --log=LogSuperStar_{2}.log --outname=superstar_{2}'.format(self.getPathDirSuperstarMC(), self.getPathDirStar(), runUiq)
-            SubmitPJ(strCmd, pathDirWork, 'Superstar{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24", jobname='SSr{0}'.format(runUiq[-4:]))
+            SubmitPJ(strCmd, pathDirWork, 'Superstar{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24", jobname='SSr{0}'.format(runUiq[-7:]))
 
     def superstarMC(self, bTrain="", bTest=""):
         if not isinstance(bTrain, bool):
@@ -1224,9 +1241,18 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             #aCmd = [ 'superstar', '-f', '-q', '-b', '-mc', '--config={0}/superstar.rc'.format(self.getPathDirSuperstarMC()), '--ind1={0}/M1/{1}/GA_M1*root'.format(self.getPathDirStarMC(), dset), '--ind2={0}/M2/{1}/GA_M2*root'.format(self.getPathDirStarMC(), dset), '--out=./', '--log=LogSuperStarMC.log' ]
             #print aCmd
             #subprocess.call(aCmd)
-            strCmd = 'superstar -f -q -b -mc --config={0}/superstar.rc --ind1="{1}/M1/{2}/GA_M1*_I_*root" --ind2="{1}/M2/{2}/GA_M2*_I_*.root" --out=./ --log=LogSuperStarMC.log'.format(self.getPathDirSuperstarMC(), self.getPathDirStarMC(), dset)
+            strCmd = 'superstar -f -q -b -mc --config={0}/superstar.rc --ind1="{1}/M1/{2}/GA_M1*_I_*root" --ind2="{1}/M2/{2}/GA_M2*_I_*.root" --out=./ --log=LogSuperStarMC_{2}.log'.format(self.getPathDirSuperstarMC(), self.getPathDirStarMC(), dset)
             #print strCmd
             SubmitPJ(strCmd, pathDirWork, "SuperstarMC{0}".format(dset), strRscGrp="B", verROOT="5.34.24", jobname='SSrMC{0}'.format(dset))
+
+
+    def tailSuperstarMC(self, dataset='TEST', nLine=20):
+        """Read the tail of superstar MC log file for trailing the progress.
+sma.tailSuperstarMC('TRAIN or TEST', #Line to be showed)       
+"""
+        pathLogFile = '{0}/{1}/LogSuperStarMC_{1}.log'.format(self.getPathDirSuperstarMC(), dataset)
+        tailFile(pathLogFile, nLine)
+
 
     def selectmc(self, bTrain="", bTest=""): #bTrain=False, bTest=True):
         li_zenith = ['za05to35', 'za35to50', 'za50to62', 'za62to70']
@@ -1265,7 +1291,7 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
         print aRunUiq
         for runUiq in aRunUiq:
             strCmd = 'superstar -f -q -b --config={0}/superstar.rc --ind1="{1}/M1/20*_M1_{2}*_I_*root" --ind2="{1}/M2/20*_M2_{2}*_I_*.root" --out=./ --log=LogSuperStarOFF_{2}.log --outname=superstar_OFF{2}'.format(self.getPathDirSuperstarMC(), self.getPathDirStarOFF(), runUiq)
-            SubmitPJ(strCmd, pathDirWork, 'SuperstarOFF{0}'.format(runUiq), strRscGrp="A", verROOT="5.34.24")
+            SubmitPJ(strCmd, pathDirWork, 'SSrF{0}'.format(runUiq[1:]), strRscGrp="A", verROOT="5.34.24")
 
     def superstarCrab(self):
         pathDirWork = self.getPathDirSuperstarCrab()
@@ -1329,7 +1355,7 @@ def Foam(name_source, li_path_input, path_dir_work='.', strSuffix=''):
     subprocess.call(aCmd)    
 
 
-def Fold(name_source, path_file_input, path_dir_work='.', strSuffix='', li_func=['PWL', 'LP', 'EPWL', 'ELP'], eFitMin=100, eFitMax=100000, eNorm=400):
+def Fold(name_source, path_file_input, path_dir_work='.', strSuffix='', li_func=['PWL', 'LP', 'EPWL', 'ELP'], eFitMin=100, eFitMax=100000, eNorm=300):
     """For running fold. 
 Available fitting function: PWL, LP, EPWL, ELP, SEPWL
 The input is one output file of flute or foam.
@@ -1629,7 +1655,7 @@ class SlowMARS(QuickMARS):
         self.setSubDirs()
 
 
-    def fluteAllRunByRun(self, eth=400, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20"):
+    def fluteAllRunByRun(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20", nBinAz=1):
         """Run flute for all runs in the melibea directory run by run.
         .fluteAllRunByRun(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bCustom=False, fluxMaxInCrab=1.1)
         """
@@ -1646,28 +1672,35 @@ class SlowMARS(QuickMARS):
         print aRunUiq
         for runUiq in aRunUiq:
             pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, dictNight[runUiq])
-            self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)))
+            self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)), nbinAz=nBinAz)
 
 
-    def createAllNightCard(self, eth=400, erangemin=100, erangemax=1000, binning="single-bin", bFoam=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True):
+    def fluteAllNightByNight(self, strNight, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nBinAz=1):
+        """Run flute night by night but for only runs which satisfy the condition of this class.
+        .fluteAllNightByNight(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bCustom=False, fluxMaxInCrab=1.1)
         """
+        print strNight
+        if len(strNight)==10:
+            strNightShort = MakeShortDateExpression(strNight)
+        elif len(strNight)==8:
+            strNightShort = strNight
+        else:
+            print "Wring night input!!!"
+            return 1
+        pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, strNight)
+        self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, bNightWise, bRunWise, bSingleBin, bCustom, fluxMaxInCrab, nightDesignate=strNightShort, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_{2}_{3}GeV_night-wise.root".format(pathDirOut, self.getConfigName(), strNightShort, int(eth)), nbinAz=nBinAz)
+
+
+    def createAllNightCard(self, eth=300, erangemin=100, erangemax=1000, binning="run-wise", bFoam=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True, strFileInitial="20??????"):
+        """Execute the post-flute analysis night by night. Flute output files should be in the night directories before running.
 """
         # Make a list of nights
-        li_dir_Night = glob.glob('{0}/20??????'.format(self.pathDirAnalysis))
+        li_dir_Night = glob.glob('{0}/{1}'.format(self.pathDirAnalysis, strFileInitial))
         print li_dir_Night
         for path_night in li_dir_Night:
             print "*", path_night
-            aFile = glob.glob('{0}/Output_flute_*_run????????_{1}GeV_{2}.root'.format(path_night, eth, binning))
-            #aRun = []
-            #dictNight = {}
-            #for fileQ in aFile:
-            #fileR = os.path.basename(fileQ)
-            #aRun.append(fileR[fileR.rindex("_run")+4:fileR.rindex("_run")+12])
-            #dictNight[aRun[-1]] = fileR[:8]
-            #aRunUiq = list(set(aRun))
-            #print len(aRunUiq), 'runs.'
-            #print aRunUiq
             strNightShort = path_night[-8:]
+            aFile = glob.glob('{0}/Output_flute_{1}_{2}_{3}GeV_{4}.root'.format(path_night, self.getConfigName(), strNightShort, int(eth), binning))
             night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax, bin_src=binning)
             if bFoam==True:
                 night.foam()
@@ -1686,7 +1719,7 @@ class NightCard:
 4) Fine binning LC (future)
 5) Night flux value (future)
 """
-    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=400, efitmin=100, efitmax=10000, bin_src="single-bin", enorm=400):
+    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=300, efitmin=100, efitmax=10000, bin_src="run-wise", enorm=300):
         self.NAMESRC = source
         self.TIMETHISNIGHT = Time(night, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
         self.TIMETHISNIGHT_SHORT = MakeShortDateExpression(self.TIMETHISNIGHT.value)
@@ -1697,7 +1730,7 @@ class NightCard:
         self.EFITMIN=efitmin
         self.EFITMAX=efitmax
         self.ENORM=enorm
-        self.BINNSRC=bin_src
+        self.BINSRC=bin_src
         self.PATH_FOAMOUT = "{0}/Foam_{1}_{2}.root".format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT)
 
 
@@ -1713,7 +1746,7 @@ class NightCard:
 """.format(file_input))
         file_list.close()
         SetEnvironForMARS("5.34.14")
-        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV_{5}.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN), self.BINNSRC)])
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV_{5}.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN), self.BINSRC)])
 
 
     def foldPL(self):
@@ -1828,6 +1861,7 @@ def GetRedshift(nameSource):
     else:
         return 0
 
+
 def AddToRcFile(strAdd, pathFileOriginal, pathFileTarget):
     rcNew = open(pathFileTarget, 'a')
     rcNew.write(strAdd)
@@ -1839,12 +1873,6 @@ def AddToRcFile(strAdd, pathFileOriginal, pathFileTarget):
     print "==", pathFileTarget, "=="
     subprocess.call(['head', pathFileTarget])
 
-def catchImage(pathImage):
-#    subprocess.call(['/home/takhsm/.iterm2/imgcat', pathImage], shell=True)
-    if os.environ['OSTYPE'][:6]=='darwin':
-        subprocess.call(['open', pathImage])
-    else:
-        subprocess.call(['eog', pathImage])
     
 def getPeriodMC(timeNightIso):
     """Return an exprssion of MC period corresponding to the input night"""
@@ -1858,3 +1886,6 @@ def getPeriodMC(timeNightIso):
         print 'pMyMarsUtil is not available for this night!!!'
         return 1
 
+
+def pjstat():
+    shellCom('pjstat')
