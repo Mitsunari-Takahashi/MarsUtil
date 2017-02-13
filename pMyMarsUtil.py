@@ -865,7 +865,7 @@ Odie.maxZenith: {1}
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer=""):
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False):
         SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
@@ -941,10 +941,20 @@ flute.maxEnergyEst: {2}
             strRcLc = """flute.EminLC: {0}
 flute.LCbinning: {1}
 """.format(eth, wise)
-            strSuffixAzBin = ''
-            if nbinAz != 1:
-                strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
+            #strSuffixAzBin = ''
+            #if nbinAz != 1:
+            strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
             strOutput = '{0}_{1}{2}GeV{3}_{4}'.format(self.getConfigName(), strOutDesignate, int(eth), strSuffixAzBin, wise)
+            pathLogfile = '{0}/Log_flute_{1}.log'.format(pathDirWork, strOutput)
+            if bForce==False:
+                if path.exists(pathLogfile)==True:
+                    with open(pathLogfile, 'r') as logfile:
+                        loglines = logfile.readlines()
+                        if loglines[len(loglines)-1] == 'Flute finished!\n':
+                            print 'Flute had already done. Skipping it.'
+                            continue
+                        else:
+                            print 'Flute had not finished. Processing it.'
             if wise=="custom":
                 if pathCustomBinRefer=="":
                     pathCustomBinRefer = "{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth))
@@ -1671,6 +1681,7 @@ class SlowMARS(QuickMARS):
         print len(aRunUiq), 'runs.'
         print aRunUiq
         for runUiq in aRunUiq:
+            print '=====', runUiq, '====='
             pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, dictNight[runUiq])
             self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)), nbinAz=nBinAz)
 
