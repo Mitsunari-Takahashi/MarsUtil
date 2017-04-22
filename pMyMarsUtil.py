@@ -205,6 +205,8 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         self.pathDirFluteCrab = '{0}/fluteCrab'.format(self.getPathDirCondition())
         self.pathDirCoach = '{0}/coach/za{1}'.format(self.getPathDirMC(), self.getZenithCut())
         self.pathDirCoachNonStd = '{0}/coachNonStd'.format(self.getPathDirSpot())
+        self.pathDirNightlyFlute = '{0}/NightlyFlute'.format(self.getPathDirSpot())
+
         
     def help(self, strCmd=""):
         if strCmd=="makeDirs" or strCmd=="":
@@ -417,8 +419,11 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
         return self.pathDirCoach
     def getPathDirCoachNonStd(self):
         return self.pathDirCoachNonStd
+    def getPathDirNightlyFlute(self):
+        return self.pathDirNightlyFlute
 
-    def makeDirs(self, bSuperstar=True, bCalibrated=True, bQuate=True, bQuateCrab=True, bMelibea=True, bOdie=True, bOdieCrab=True, bCaspar=True, bFlute=True, bSuperstarCrab=True, bStarCrab=True, bStar=True, bStarMC=True, bSuperstarMC=True, bMelibeaNonStdMC=True, bMelibeaCrab=True, bFluteCrab=True, bSsignal=True, bStarOFF=True, bCalibratedOFF=True, bSuperstarOFF=True, bCoachNonStd=True):
+
+    def makeDirs(self, bSuperstar=True, bCalibrated=True, bQuate=True, bQuateCrab=True, bMelibea=True, bOdie=True, bOdieCrab=True, bCaspar=True, bFlute=True, bNightlyFlute=True, bSuperstarCrab=True, bStarCrab=True, bStar=True, bStarMC=True, bSuperstarMC=True, bMelibeaNonStdMC=True, bMelibeaCrab=True, bFluteCrab=True, bSsignal=True, bStarOFF=True, bCalibratedOFF=True, bSuperstarOFF=True, bCoachNonStd=True):
         """Make directories for analysis, following the configuration set by setSubDirs.
 .makeDirs(bSuperstar=True, bQuate=True, bQuateCrab=True, bMelibea=True, bOdie=True, bOdieCrab=True, bCaspar=True, bFlute=True, bSuperstarCrab=True, bStarCrab=True, bStar=True, bStarMC=True, bSuperstarMC=True, bMelibeaNonStdMC=True, bMelibeaCrab=True, bFluteCrab=True, bSsignal=True, bStarOFF=True, bSuperstarOFF=True, bCoachNonStd=True):
 """
@@ -554,6 +559,13 @@ QuickMARS(nameSrc, strNight, ZenithCut='35to50', TransCut9km='55', CloudCut='No'
                 os.chdir(pathDirWork)
                 print os.getcwd()
             os.chdir('..')
+        if bNightlyFlute==True:
+            pathDirWork = self.getPathDirNightlyFlute()
+            if path.exists(pathDirWork)==False:
+                os.makedirs(pathDirWork)
+            os.chdir(pathDirWork)
+            print os.getcwd()
+            os.chdir('..')
         if bFluteCrab==True:
             pathDirWork = ''
             aBinning = ['single-bin']
@@ -612,7 +624,7 @@ NumberStarMin: {8}
         rcNew.write(rcCopied)
         rcOrig.close()
         rcNew.close()
-        subprocess.call(['head', pathRcNew])
+        subprocess.call(['head', '-n 20', pathRcNew])
         if self.getTimesOption()==True:
             aCmd = [ 'quate', '-b', '--stereo', '-f', '--config={0}'.format(pathRcNew), '--ind={0}'.format(self.getPathDirSuperstar()), '--out=.', '--times' ]
         else:
@@ -697,11 +709,11 @@ RF.zdmax: {5}
         rcNew.write(rcCopied)
         rcOrig.close()
         rcNew.close()
-        subprocess.call(['head', pathRcNew])
-        aCmd = [ 'coach', '--config=./coach_{0}.rc'.format(self.getConfigName()), '-RFgh', '-RFdisp', '-LUTs', '-q', '-b' ]
+        subprocess.call(['head', '-n 20', pathRcNew])
+        aCmd = [ 'coach', '--config=./coach_{0}.rc'.format(self.getConfigName()), '-RFgh', '-RFdisp', '-LUTs', '-q', '-b', '-RFenStereo']
         print aCmd
         subprocess.call(aCmd)
-        aCmd =  'coach --config=./coach_{0}.rc -RFgh -RFdisp -LUTs -q -b'.format(self.getConfigName())
+        #aCmd =  'coach --config=./coach_{0}.rc -RFgh -RFdisp -LUTs -q -b'.format(self.getConfigName())
         #SubmitPJ(aCmd, pathDirWork, 'Coach')
         #bCmd =  'coach --config=./coach_{0}.rc -RFdisp -q -b'.format(self.getConfigName())
         #SubmitPJ(bCmd, pathDirWork, 'RFdisp')
@@ -734,9 +746,9 @@ RF.zdmax: default: {1}
         rcOrig.close()
         rcNew.close()
         if self.getTimesOption()==True:
-            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuate()) ]
+            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuate()), '-erec-rf', '--erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
         else:
-            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd) ]#, '--erec-rf --erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
+            aCmd = [ 'melibea', '-b', '-q', '--config={0}'.format(pathRcNew), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarUsed()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-erec-rf', '--erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
         if self.bForce==True:
             aCmd.append('-f')
         print aCmd
@@ -752,7 +764,7 @@ RF.zdmax: default: {1}
         os.chdir(self.getPathDirMelibeaCrab())
         print os.getcwd()
         SetEnvironForMARS("5.34.24")
-        aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarCrab()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuateCrab()) ] #, '--erec-rf --erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
+        aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/20*_S_*.root'.format(self.getPathDirSuperstarCrab()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--timeslices={0}/excluded.times'.format(self.getPathDirQuateCrab()), '-erec-rf', '--erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
         print aCmd
         subprocess.call(aCmd)
 
@@ -780,7 +792,7 @@ RF.zdmax: default: {1}
             pathDirWork = '{0}/{1}'.format(self.getPathDirMelibeaNonStdMC(), dset)
             os.chdir(pathDirWork)
             print os.getcwd()
-            aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/{1}/GA_za*{1}_S_wr.root'.format(self.getPathDirSuperstarMC(), dset), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-mc' ] #, '--erec-rf --erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
+            aCmd = [ 'melibea', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/{1}/GA_za*{1}_S_wr.root'.format(self.getPathDirSuperstarMC(), dset), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-mc', '-erec-rf', '--erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
             print aCmd
             subprocess.call(aCmd)
 
@@ -794,7 +806,7 @@ RF.zdmax: default: {1}
         os.chdir(self.getPathDirMelibeaNonStdMC())
         print os.getcwd()
         SetEnvironForMARS("5.34.24")
-        aCmd = [ 'melibea', '-mc', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/GA_*_S_*.root'.format(self.getPathDirSuperstarMC()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '--erec-rf --erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
+        aCmd = [ 'melibea', '-mc', '-b', '-q', '-f', '--config={0}/melibea_stereo.rc'.format(self.getPathDirMelibea()), '--ind={0}/GA_*_S_*.root'.format(self.getPathDirSuperstarMC()), '--out=./', '--stereo', '--rf', '--rftree={0}/RF.root'.format(pathCoachNonStd), '--calc-disp-rf', '--rfdisptree={0}/disp1/DispRF.root'.format(pathCoachNonStd), '--calc-disp2-rf', '--rfdisp2tree={0}/disp2/DispRF.root'.format(pathCoachNonStd), '--calcstereodisp', '--disp-rf-sstrained', '-erec', '--etab={0}/Energy_Table.root'.format(pathCoachNonStd), '-erec-rf', '--erf={0}/EnRF_Stereo.root'.format(pathCoachNonStd) ]
         print aCmd
         subprocess.call(aCmd)
 
@@ -905,7 +917,7 @@ Odie.maxZenith: {1}
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False):
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False, bEnRF=False, pathPreviousSpec=""):#, pathFindConfig=''):#, pathPreviousSpec=""):
         SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
@@ -927,7 +939,7 @@ Odie.maxZenith: {1}
             else:
                 strInDesignate = '{0}_{1}'.format(nightDesignate, runDesignate)
                 strOutDesignate = '{0}run{1}_'.format(nightDesignate, runDesignate)
-
+        strRcData=''
         strRcData="""
 flute.mcdata:  {0}/TEST/GA_*_Q_*.root
 flute.data:    {1}/{2}*_Q_*.root
@@ -943,6 +955,62 @@ flute.maxZd: {1}
             redshift = GetRedshift(self.getSourceName())
         strRcRedshift = """flute.SourceRedshift: {0}
 """.format(redshift)
+
+        if pathPreviousSpec!="":
+            if path.exists(pathPreviousSpec)==False:
+                print pathPreviousSpec, 'does not exist!!!'
+                return 1
+            filePrev = ROOT.TFile(pathPreviousSpec, 'READ')
+            if os.path.basename(pathPreviousSpec)[:12]=='Output_flute':
+                sedPrev = filePrev.Get('DeabsorbedSED')
+                fcPWL = ROOT.TF1('fcPWL', '[0]*TMath::Power(x/[1], 2.+[2])', 1, 100000)
+                fcPWL.SetParameter(0, 1e-10)
+                fcPWL.FixParameter(1, eth)
+                fcPWL.SetParLimits(2, -5, 0) 
+                fcPWL.SetParameter(2, -2.31)
+                sedPrev.Fit(fcPWL, "", "goff", emin, emax)
+                chisqPWL = fcPWL.GetChisquare()
+                if sedPrev.GetN()>2:
+                    fcLP = ROOT.TF1('fcLP', '[0]*TMath::Power(x/[1], 2.+[2]-([3])*TMath::Log10(x/[1]))', 1, 100000)
+                    fcLP.SetParameter(0, 1e-10)
+                    fcLP.FixParameter(1, eth)
+                    fcLP.SetParameter(2, -2.31)
+                    fcPWL.SetParLimits(2, -4, 2) 
+                    fcLP.SetParameter(3, 0.26)
+                    fcPWL.SetParLimits(3, 0, 3)
+                    sedPrev.Fit(fcLP, "", "goff", emin, emax)
+                    chisqLP = fcLP.GetChisquare()
+                    fcEPWL = ROOT.TF1('fcEPWL', '[0]*TMath::Power(x/[1], 2.+[2])*TMath::Exp(x/[3])', 1, 100000)
+                    fcEPWL.SetParameter(0, 1e-10)
+                    fcEPWL.FixParameter(1, eth)
+                    fcEPWL.SetParameter(2, -2.)
+                    fcPWL.SetParLimits(2, -4, 2) 
+                    fcEPWL.SetParameter(3, 1000.)
+                    fcPWL.SetParLimits(3, 200, 10000) 
+                    sedPrev.Fit(fcEPWL, "", "goff", emin, emax)
+                    chisqEPWL = fcEPWL.GetChisquare()
+                    if chisqEPWL < chisqPWL or chisqLP < chisqPWL:
+                        if chisqLP<chisqEPWL:
+                            assumedSpectrum = 'pow(x/{0},{1}-{2}*log10(x/{0}))'.format(fcLP.GetParameter(1), fcLP.GetParameter(2), fcLP.GetParameter(3))
+                        else:
+                            assumedSpectrum = 'pow(x/{0},{1})*exp(x/{2})'.format(fcEPWL.GetParameter(1), fcEPWL.GetParameter(2), fcEPWL.GetParameter(3))
+                    else:
+                        assumedSpectrum = 'pow(x/{0},{1})'.format(fcPWL.GetParameter(1), fcPWL.GetParameter(2))
+                else:
+                    assumedSpectrum = 'pow(x/{0},{1})'.format(fcPWL.GetParameter(1), fcPWL.GetParameter(2))
+            elif os.path.basename(pathPreviousSpec)[:4]=='Foam':
+                print 'Looking for previous result...'
+                dict_par1st = Fold(self.getSourceName(), pathPreviousSpec, path_dir_work='.', strSuffix='temp', li_func=['PWL', 'LP', 'EPWL'], eFitMin=emin, eFitMax=emax, eNorm=eth)
+                if dict_par1st['LP']['d.o.f']>=0 and dict_par1st['EPWL']['d.o.f']>=0:
+                    if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f'] or dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f']:
+                        if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f']:
+                            assumedSpectrum = 'pow(x/{0},{1}-({2})*log10(x/{0}))'.format(eth, dict_par1st['LP']['$\\alpha$'][0], dict_par1st['LP']['$\\beta$'][0])
+                        else:
+                            assumedSpectrum = 'pow(x/{0},{1}) * exp(x/{2})'.format(eth, dict_par1st['EPWL']['$\\alpha$'][0], dict_par1st['EPWL']['$E_{cut}$[TeV]'][0]*1000.)
+                    else:
+                        assumedSpectrum = 'pow(x/{0},{1})'.format(eth, dict_par1st['PWL']['$\\alpha$'][0])
+                else:
+                    assumedSpectrum = 'pow(x/{0},{1})'.format(eth, dict_par1st['PWL']['$\\alpha$'][0])
         strRcAssumedSpectrum = ""
         if assumedSpectrum != "":
             strRcAssumedSpectrum = """flute.AssumedSpectrum: {0}
@@ -954,6 +1022,10 @@ flute.maxZd: {1}
 flute.minEnergyEst: {1}
 flute.maxEnergyEst: {2}
 """.format(nebin, emin, emax)
+        strRcEnRF = ''
+        if bEnRF==True:
+            strRcEnRF = """flute.NameEnergyEst: MEnergyEstStereoRF
+"""
 
         strRcNbinAz = """flute.nBinsAz: {0}
 """.format(nbinAz)
@@ -985,6 +1057,8 @@ flute.LCbinning: {1}
             #if nbinAz != 1:
             strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
             strOutput = '{0}_{1}{2}GeV{3}_{4}'.format(self.getConfigName(), strOutDesignate, int(eth), strSuffixAzBin, wise)
+            if bEnRF==True:
+                strOutput = strOutput + "_EnRF"
             pathLogfile = '{0}/Log_flute_{1}.log'.format(pathDirWork, strOutput)
             if bForce==False:
                 if path.exists(pathLogfile)==True:
@@ -995,13 +1069,18 @@ flute.LCbinning: {1}
                             continue
                         else:
                             print 'Flute had not finished. Processing it.'
+                            
             if wise=="custom":
                 if pathCustomBinRefer=="":
                     pathCustomBinRefer = "{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth))
                 if path.exists(pathCustomBinRefer)==False:
                     print "{0} does not exist!!!".format(pathCustomBinRefer)
+                    return 0
                 aBinCustom = GetLC_bins(pathCustomBinRefer) #Output_flute file
-
+                if aBinCustom==1:
+                    print 'Flute is being skipped.'
+                    continue
+                print aBinCustom
                 strRcLc = strRcLc + """
 flute.LCbinlowedge: {0}""".format(aBinCustom[0][0])
                 for itv in aBinCustom[0][1:]:
@@ -1013,9 +1092,8 @@ flute.LCbinupedge: {0}""".format(aBinCustom[1][0])
                 strRcLc = strRcLc + """
 """
             # Modify RC file
-            strRcAdd = strRcData + strRcZd + strRcEnergyRange + strRcNbinAz + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
-#            pathRcNew = './flute_{0}_{1}{2}GeV_{3}.rc'.format(self.getConfigName(), strOutDesignate, int(eth), wise)
-            pathRcNew = './flute_{0}.rc'.format(strOutput)
+            strRcAdd = strRcData + strRcZd + strRcEnergyRange + strRcEnRF + strRcNbinAz + strRcSize + strRcRedshift + strRcAssumedSpectrum + strRcLc
+            pathRcNew = '{0}/flute_{1}.rc'.format(pathDirWork, strOutput)
             rcNew = open(pathRcNew, 'w') 
             rcNew.write(strRcAdd)
             rcOrig = open('{0}/mrcfiles/flute.rc'.format(self.getPathMarssys()), 'r')
@@ -1023,7 +1101,7 @@ flute.LCbinupedge: {0}""".format(aBinCustom[1][0])
             rcNew.write(rcCopied)
             rcOrig.close()
             rcNew.close()
-            subprocess.call(['head', pathRcNew])
+            subprocess.call(['head', '-n 20', pathRcNew])
 
             aCmd = [ 'flute', '-q', '-b', '--config={0}'.format(pathRcNew) ]
             print aCmd
@@ -1079,7 +1157,7 @@ flute.LCbinning: {1}
             rcNew.write(rcCopied)
             rcOrig.close()
             rcNew.close()
-            subprocess.call(['head', pathRcNew])
+            subprocess.call(['head', '-n 20', pathRcNew])
 
             SetEnvironForMARS("5.34.24")
             aCmd = [ 'flute', '-q', '-b', '--config={0}'.format(pathRcNew) ]
@@ -1158,9 +1236,9 @@ MJStar.MImgCleanStd.CleanLevel2: {1}
             rcNew.close()
             rcNewMC.close()
             print "==", pathRcNew, "=="
-            subprocess.call(['head', pathRcNew])
+            subprocess.call(['head', '-n 20', pathRcNew])
             print "==", pathRcNewMC, "=="
-            subprocess.call(['head', pathRcNewMC])
+            subprocess.call(['head', '-n 20', pathRcNewMC])
 
     def starMC(self, bTrain="", bTest=""):
         # This method may not work well.
@@ -1635,7 +1713,7 @@ MCallUnfold.nminBnmaxB: {2} {3}
                 rcOrig.close()
                 file_unfold_rc1.close()
                 print '=====', path_unfold_rc1, '====='
-                subprocess.call(['head', '-n', '30', path_unfold_rc1])
+                subprocess.call(['head', '-n', '40', path_unfold_rc1])
                 liCmd = ['root', '{0}/macros/CombUnfold.C("{1}")'.format(os.environ['MARSSYS'], path_unfold_rc1)]
                 #if ntrial==0:
                 liCmd.append('-b')
@@ -1758,16 +1836,20 @@ class SlowMARS(QuickMARS):
         self.pathDirAnalysis = '{0}/{1}/{2}'.format(self.getPathBase(), self.getSourceName(), self.getTitleAnalysis())
         self.pathDirCondition = self.getPathDirSpot()
         self.setSubDirs()
+        self.pathDirNightlyFlute = '{0}/NightlyFlute'.format(self.pathDirAnalysis)
 
 
-    def fluteAllRunByRun(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20", nBinAz=1):
+    def fluteAllRunByRun(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20", nBinAz=1, bForceRedo=False, bNewErec=False, bDoTwice=True):#, lst_dir_config=[]):
         """Run flute for all runs in the melibea directory run by run.
         .fluteAllRunByRun(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bCustom=False, fluxMaxInCrab=1.1)
         """
         # Make a list of #RUN
         aFile = glob.glob('{0}/{1}*_Q_*.root'.format(self.getPathDirMelibea(), strFileInitial))
+        print aFile
         aRun = []
         dictNight = {}
+        dictPath = {}
+        dictPathSum = {}
         for fileQ in aFile:
             fileR = os.path.basename(fileQ)
             aRun.append(fileR[9:17])
@@ -1775,10 +1857,69 @@ class SlowMARS(QuickMARS):
         aRunUiq = list(set(aRun))
         print len(aRunUiq), 'runs.'
         print aRunUiq
+        aRunValid = []
         for runUiq in aRunUiq:
             print '=====', runUiq, '====='
-            pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, dictNight[runUiq])
-            self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_run{2}_{3}GeV_single-bin.root".format(pathDirOut, self.getConfigName(), runUiq, int(eth)), nbinAz=nBinAz)
+            pathDirOut = '{0}/{1}'.format(self.getPathDirNightlyFlute(), dictNight[runUiq])
+            pathFluteBinRefer = "{0}/Output_flute_{1}_run{2}_{3}GeV_{4}AzBins_single-bin".format(pathDirOut, self.getConfigName(), runUiq, int(eth), nBinAz)
+            if bNewErec==True:
+                pathFluteBinRefer = pathFluteBinRefer + '_EnRF'
+            pathFluteBinRefer = pathFluteBinRefer + '.root'
+            strOutput = '{0}_run{1}_{2}GeV_{3}AzBins_single-bin'.format(self.getConfigName(), runUiq, int(eth), nBinAz)
+            dictPathFluteIn = '{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
+            if bDoTwice==True:
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom=False, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec)
+            else:
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec)
+            if path.exists(dictPathFluteIn)==False:
+                print dictPathFluteIn, 'have not been produced!!!'
+                for pathmelibea in aFile:
+                    if runUiq in pathmelibea:
+                        filemelibea = ROOT.TFile(pathmelibea, 'READ')
+                        trevt = filemelibea.Get('Events')
+                        if trevt.GetEntries()<1:
+                            print pathmelibea, 'have no events.'
+                        else:
+                            print pathmelibea, 'have', trevt.GetEntries(), 'events.'
+                            return 1
+            else:
+                dictPath[runUiq] = dictPathFluteIn#'{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
+                aRunValid.append(runUiq)
+
+        if bDoTwice==True:
+            set_night = set(dictNight.values())
+            dict_path_night = {}
+            for nigh in set_night:
+                dict_path_night[nigh] = []
+            for runUiq in aRunValid:
+                dict_path_night[dictNight[runUiq]].append(dictPath[runUiq])
+            for nigh in set_night:
+                print '*', nigh
+                if len(dict_path_night[nigh])>1:
+                    strFoamSuffix = '{0}_{1}'.format(nigh, self.getConfigName())
+                    Foam(self.getSourceName(), dict_path_night[nigh], '{0}/{1}'.format(self.getPathDirNightlyFlute(), nigh), strFoamSuffix)
+                    dictPathSum[nigh] = '{0}/{1}/Foam_{2}_{3}.root'.format(self.getPathDirNightlyFlute(), nigh, self.getSourceName(), strFoamSuffix)
+                elif len(dict_path_night[nigh])==1:
+                    print 'Only one file.'
+                    dictPathSum[nigh] = dict_path_night[nigh][0]
+                else:
+                    print 'No file.'
+
+            for runUiq in aRunValid:
+                print '=====', runUiq, '(Second time) ====='
+                pathDirOut = '{0}/{1}'.format(self.getPathDirNightlyFlute(), dictNight[runUiq])
+                pathFluteBinRefer = "{0}/Output_flute_{1}_run{2}_{3}GeV_{4}AzBins_single-bin".format(pathDirOut, self.getConfigName(), runUiq, int(eth), nBinAz)
+                if bNewErec==True:
+                    pathFluteBinRefer = pathFluteBinRefer + '_EnRF'
+                pathFluteBinRefer = pathFluteBinRefer + '.root'
+                dictPath[runUiq] = pathFluteBinRefer
+                pathReferPrevious = '{0}/night-wise/Output_flute_{1}_{2}GeV_{3}AzBins_night-wise.root'.format(self.getPathDirFlute(), self.getConfigName(), int(eth), nBinAz)
+                if path.exists(pathReferPrevious)==False:
+                    pathReferPrevious = ''
+                else:
+                    print 'Reffering', pathReferPrevious
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=True, bEnRF=bNewErec, pathPreviousSpec=dictPathSum[dictNight[runUiq]])
+
 
 
     def fluteAllNightByNight(self, strNight, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nBinAz=1):
@@ -1791,31 +1932,53 @@ class SlowMARS(QuickMARS):
         elif len(strNight)==8:
             strNightShort = strNight
         else:
-            print "Wring night input!!!"
+            print "Wrong night input!!!"
             return 1
-        pathDirOut = '{0}/{1}'.format(self.pathDirAnalysis, strNight)
+        pathDirOut = '{0}/NightlyFlute/{1}'.format(self.pathDirAnalysis, strNightShort)
         self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, bNightWise, bRunWise, bSingleBin, bCustom, fluxMaxInCrab, nightDesignate=strNightShort, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_{2}_{3}GeV_{4}AzBins_night-wise.root".format(pathDirOut, self.getConfigName(), strNightShort, int(eth), nBinAz), nbinAz=nBinAz)
 
 
-    def createAllNightCard(self, eth=300, erangemin=100, erangemax=1000, binning="run-wise", bFoam=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True, strFileInitial="20??????"):
+    def createAllNightCard(self, eth=300, erangemin=100, erangemax=1000, binning="run-wise", bFoam=True, bNightlyFlux=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True, strFileInitial="20??????", fc_spec="", mBinAz=1, bEnergyRF=False):#, lst_config=[]):
         """Execute the post-flute analysis night by night. Flute output files should be in the night directories before running.
 """
         # Make a list of nights
-        li_dir_Night = glob.glob('{0}/{1}'.format(self.pathDirAnalysis, strFileInitial))
+        li_dir_Night = glob.glob('{0}/NightlyFlute/{1}'.format(self.pathDirAnalysis, strFileInitial))
         print li_dir_Night
         for path_night in li_dir_Night:
+            print ''
             print "*", path_night
             strNightShort = path_night[-8:]
-            aFile = glob.glob('{0}/Output_flute_{1}_{2}_{3}GeV_{4}.root'.format(path_night, self.getConfigName(), strNightShort, int(eth), binning))
-            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax, bin_src=binning)
+            aFile = []
+            path_search = '{0}/Output_flute_{1}_run*_{2}GeV_{3}AzBins_{4}.root'.format(path_night, self.getConfigName(), int(eth), int(mBinAz), binning)
+            print path_search
+            aFile = glob.glob(path_search) #strNightShort, int(eth), int(mBinAz), binning))
+            print aFile
+            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax, bin_src=binning, assumed_spec=fc_spec)
+            # if bUpdateFlute==True:
+            #     print 'Updating Flute results...'
+            #     night.foam()
+                
+            #     print 'Looking for previous result...'
+            #     dict_par1st = Fold(self.getSourceName(), night.PATH_FOAMOUT, path_dir_work='.', strSuffix='1st', li_func=['LP', 'EPWL'], eFitMin=erangemin, eFitMax=erangemax, eNorm=eth)
+            #     assumedSpec = ''
+            #     if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f']:
+            #         assumedSpec = 'pow(x/{0},{1}-({2})*log10(x/{0}))'.format(eth, dict_par1st['LP']['$\\alpha$'][0], dict_par1st['LP']['$\\beta$'][0])
+            #     else:
+            #         assumedSpec = 'pow(x/{0},{1}) * exp(x/{2})'.format(eth, dict_par1st['EPWL']['$\\alpha$'][0], dict_par1st['EPWL']['$E_{cut}$[TeV]'][0]*1000.)
+
+
+            #     sma.fluteAllRunByRun(eth, assumedSpectrum=assumedSpec, bSingleBin=True, bCustom=True, strFileInitial=strNightShort, nBinAz=mBinAz, bForceRedo=True, bNewErec=bEnergyRF)#, lst_dir_config=lst_config)
+
             if bFoam==True:
                 night.foam()
+            if bFoldPL==True:
+                night.foldPL()
+            if bNightlyFlux==True:
+                night.calcFlux()
             if bCombineLC==True:
                 night.combineLC()
             if bUnfoldPL==True:
                 night.unfoldPL()
-            if bFoldPL==True:
-                night.foldPL()
 
             
 class NightCard:
@@ -1825,7 +1988,7 @@ class NightCard:
 4) Fine binning LC (future)
 5) Night flux value (future)
 """
-    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=300, efitmin=100, efitmax=10000, bin_src="run-wise", enorm=300, nbinAz=1):
+    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=300, efitmin=100, efitmax=10000, bin_src="run-wise", enorm=300, nbinAz=12, assumed_spec="pow(x/300.,-2.31-0.26*log10(x/300.))"):
         self.NAMESRC = source
         self.TIMETHISNIGHT = Time(night, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
         self.TIMETHISNIGHT_SHORT = MakeShortDateExpression(self.TIMETHISNIGHT.value)
@@ -1839,11 +2002,24 @@ class NightCard:
         self.BINSRC=bin_src
         self.PATH_FOAMOUT = "{0}/Foam_{1}_{2}.root".format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT)
         self.NBIN_AZ=nbinAz
+        self.ASSUMEDSPEC=assumed_spec
 
 
     def foam(self):
         if self.NFLUTEOUTPUT>1:
             Foam(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT)
+        else:
+            print 'No Flute target.'
+
+
+    def calcFlux(self):
+        file_list = open('list_LC_temp.txt', 'w')
+        for file_input in self.LI_PATH_FLUTEOUTPUT:
+            file_list.write("""{0}
+""".format(file_input))
+        file_list.close()
+        SetEnvironForMARS("5.34.14")
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CalcFoamedFlux.C("{1}", {2}, {3}, "{4}/NightlyFlux_{5}_{6}_{2}GeV.csv")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_FOAMOUT, self.ENORM, int(self.TIMETHISNIGHT.mjd+0.5), self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT)])
 
 
     def combineLC(self):
@@ -1952,10 +2128,10 @@ def SetEnvironForMARS(verRoot = "5.34.24"):
     if verRoot == "5.34.24":
         os.environ["ROOTSYS"] = "/home/takhsm/app/root_v5.34.24"
         #os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-16-2_ROOT53424"
-        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-17-3_ROOT53424"
-        #os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_StereoRF_beta"
-        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_V2-17-3_ROOT53424:/home/takhsm/app/ROOT_v53424/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
-        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_V2-17-3_ROOT53424:/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/lib64"
+        #os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-17-3_ROOT53424"
+        os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_StereoRF_beta"
+        os.environ["PATH"] = "/home/takhsm/app/Mars/Mars_StereoRF_beta:/home/takhsm/app/ROOT_v53424/bin:/home/takhsm/app/anaconda2/bin:/home/takhsm/app/Python2/bin:/usr/local/gcc473/bin:/usr/local/bin:/bin:/usr/bin"
+        os.environ["LD_LIBRARY_PATH"] = "/home/takhsm/app/root_v5.34.24/lib:/home/takhsm/app/root_v5.34.24/lib/root:/home/takhsm/app/lib:/home/takhsm/app/root_v5.34.24:/home/takhsm/app/Mars/Mars_StereoRF_beta:/home/takhsm/lib/libPNG/lib:/home/takhsm/lib/lib:/home/takhsm/lib/libJPEG/lib:/home/takhsm/CTA_MC/Chimp/Chimp:/home/takhsm/CTA_MC/Chimp/Chimp/hessioxxx/lib:/home/takhsm/charaPMT:/usr/local/gcc473/lib64:/usr/local/gcc473/lib:/usr/lib64"
     if verRoot == "5.34.14":
         os.environ["ROOTSYS"] = "/usr/local/gcc473/root_v5.34.14"
         os.environ["MARSSYS"] = "/home/takhsm/app/Mars/Mars_V2-15-8"
@@ -1979,7 +2155,7 @@ def AddToRcFile(strAdd, pathFileOriginal, pathFileTarget):
     rcOrig.close()
     rcNew.close()
     print "==", pathFileTarget, "=="
-    subprocess.call(['head', pathFileTarget])
+    subprocess.call(['head', '-n 20', pathFileTarget])
 
     
 def getPeriodMC(timeNightIso):
