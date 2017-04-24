@@ -963,6 +963,7 @@ flute.maxZd: {1}
             filePrev = ROOT.TFile(pathPreviousSpec, 'READ')
             if os.path.basename(pathPreviousSpec)[:12]=='Output_flute':
                 sedPrev = filePrev.Get('DeabsorbedSED')
+                # Power-law
                 fcPWL = ROOT.TF1('fcPWL', '[0]*TMath::Power(x/[1], 2.+[2])', 1, 100000)
                 fcPWL.SetParameter(0, 1e-10)
                 fcPWL.FixParameter(1, eth)
@@ -971,46 +972,52 @@ flute.maxZd: {1}
                 sedPrev.Fit(fcPWL, "", "goff", emin, emax)
                 chisqPWL = fcPWL.GetChisquare()
                 if sedPrev.GetN()>2:
+                    # Log-Parabola
                     fcLP = ROOT.TF1('fcLP', '[0]*TMath::Power(x/[1], 2.+[2]-([3])*TMath::Log10(x/[1]))', 1, 100000)
                     fcLP.SetParameter(0, 1e-10)
                     fcLP.FixParameter(1, eth)
                     fcLP.SetParameter(2, -2.31)
-                    fcPWL.SetParLimits(2, -4, 2) 
+                    fcLP.SetParLimits(2, -4, 2) 
                     fcLP.SetParameter(3, 0.26)
-                    fcPWL.SetParLimits(3, 0, 3)
+                    fcLP.SetParLimits(3, 0, 3)
                     sedPrev.Fit(fcLP, "", "goff", emin, emax)
                     chisqLP = fcLP.GetChisquare()
-                    fcEPWL = ROOT.TF1('fcEPWL', '[0]*TMath::Power(x/[1], 2.+[2])*TMath::Exp(x/[3])', 1, 100000)
+                    # Power-law with Exponential cutoff
+                    fcEPWL = ROOT.TF1('fcEPWL', '[0]*TMath::Power(x/[1], 2.+[2])*TMath::Exp(-x/[3])', 1, 100000)
                     fcEPWL.SetParameter(0, 1e-10)
                     fcEPWL.FixParameter(1, eth)
                     fcEPWL.SetParameter(2, -2.)
-                    fcPWL.SetParLimits(2, -4, 2) 
+                    fcEPWL.SetParLimits(2, -4, 2) 
                     fcEPWL.SetParameter(3, 1000.)
-                    fcPWL.SetParLimits(3, 200, 10000) 
+                    fcEPWL.SetParLimits(3, 200, 10000) 
                     sedPrev.Fit(fcEPWL, "", "goff", emin, emax)
                     chisqEPWL = fcEPWL.GetChisquare()
                     if chisqEPWL < chisqPWL or chisqLP < chisqPWL:
                         if chisqLP<chisqEPWL:
-                            assumedSpectrum = 'pow(x/{0},{1}-{2}*log10(x/{0}))'.format(fcLP.GetParameter(1), fcLP.GetParameter(2), fcLP.GetParameter(3))
+                            assumedSpectrum = 'pow(x/{0},{1}-({2})*log10(x/{0}))'.format(fcLP.GetParameter(1), fcLP.GetParameter(2), fcLP.GetParameter(3))
                         else:
-                            assumedSpectrum = 'pow(x/{0},{1})*exp(x/{2})'.format(fcEPWL.GetParameter(1), fcEPWL.GetParameter(2), fcEPWL.GetParameter(3))
+                            assumedSpectrum = 'pow(x/{0},{1})*exp(-x/{2})'.format(fcEPWL.GetParameter(1), fcEPWL.GetParameter(2), fcEPWL.GetParameter(3))
                     else:
                         assumedSpectrum = 'pow(x/{0},{1})'.format(fcPWL.GetParameter(1), fcPWL.GetParameter(2))
+                #elif sedPrev.GetN()>1:
+                 #   assumedSpectrum = ''#'pow(x/{0},{1})'.format(fcPWL.GetParameter(1), fcPWL.GetParameter(2))
                 else:
-                    assumedSpectrum = 'pow(x/{0},{1})'.format(fcPWL.GetParameter(1), fcPWL.GetParameter(2))
+                    assumedSpectrum = ''
             elif os.path.basename(pathPreviousSpec)[:4]=='Foam':
                 print 'Looking for previous result...'
                 dict_par1st = Fold(self.getSourceName(), pathPreviousSpec, path_dir_work='.', strSuffix='temp', li_func=['PWL', 'LP', 'EPWL'], eFitMin=emin, eFitMax=emax, eNorm=eth)
-                if dict_par1st['LP']['d.o.f']>=0 and dict_par1st['EPWL']['d.o.f']>=0:
+                if dict_par1st['LP']['d.o.f']>=0 and dict_par1st['EPWL']['d.o.f']>=0 and dict_par1st['PWL']['d.o.f']>0:
                     if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f'] or dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f']:
                         if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f']:
                             assumedSpectrum = 'pow(x/{0},{1}-({2})*log10(x/{0}))'.format(eth, dict_par1st['LP']['$\\alpha$'][0], dict_par1st['LP']['$\\beta$'][0])
                         else:
-                            assumedSpectrum = 'pow(x/{0},{1}) * exp(x/{2})'.format(eth, dict_par1st['EPWL']['$\\alpha$'][0], dict_par1st['EPWL']['$E_{cut}$[TeV]'][0]*1000.)
+                            assumedSpectrum = 'pow(x/{0},{1}) * exp(-x/{2})'.format(eth, dict_par1st['EPWL']['$\\alpha$'][0], dict_par1st['EPWL']['$E_{cut}$[TeV]'][0])
                     else:
                         assumedSpectrum = 'pow(x/{0},{1})'.format(eth, dict_par1st['PWL']['$\\alpha$'][0])
+                #elif dict_par1st['PWL']['d.o.f']>0:
+                 #   assumedSpectrum = 'pow(x/{0},{1})'.format(eth, dict_par1st['PWL']['$\\alpha$'][0])
                 else:
-                    assumedSpectrum = 'pow(x/{0},{1})'.format(eth, dict_par1st['PWL']['$\\alpha$'][0])
+                    assumedSpectrum = ''
         strRcAssumedSpectrum = ""
         if assumedSpectrum != "":
             strRcAssumedSpectrum = """flute.AssumedSpectrum: {0}
@@ -1483,7 +1490,7 @@ def Foam(name_source, li_path_input, path_dir_work='.', strSuffix=''):
     subprocess.call(aCmd)    
 
 
-def Fold(name_source, path_file_input, path_dir_work='.', strSuffix='', li_func=['PWL', 'LP', 'EPWL', 'ELP'], eFitMin=100, eFitMax=100000, eNorm=300, plotformat='png', plotsizeX=0, plotsizeY=0, showFitResults=True):
+def Fold(name_source, path_file_input, path_dir_work='.', strSuffix='', li_func=['PWL', 'LP', 'EPWL', 'ELP'], eFitMin=100, eFitMax=100000, eNorm=300, plotformat='png', plotsizeX=0, plotsizeY=0, showFitResults=True, tableformat='apjtex'):
     """For running fold. 
 Available fitting function: PWL, LP, EPWL, ELP, SEPWL
 The input is one output file of flute or foam.
@@ -1520,7 +1527,7 @@ The input is one output file of flute or foam.
         file_Fold_out = ROOT.TFile('{0}/Output_fold_{1}{2}.root'.format(path_dir_work, name_source, str_title_output), 'READ')
         chiSq = file_Fold_out.Get('chisquare')
         ndof = file_Fold_out.Get('ndof')
-        sed = file_Fold_out.Get('SpectralModel')
+        spec = file_Fold_out.Get('SpectralModel')
         dict_chiSq_red[func] = chiSq.GetVal()/ndof.GetVal()
         if dict_chiSq_red[func] < chiSq_ed_min:
             chiSq_ed_min = dict_chiSq_red[func]
@@ -1530,8 +1537,8 @@ The input is one output file of flute or foam.
         dict_func_par[func]['d.o.f'] = ndof.GetVal()
         for jpar, par in enumerate(DCT_LST_FUNCTION_PARAMETERS[func]):
             dict_func_par[func][par] = []
-            dict_func_par[func][par].append(sed.GetParameter(jpar))
-            dict_func_par[func][par].append(sed.GetParError(jpar)) # error
+            dict_func_par[func][par].append(spec.GetParameter(jpar))
+            dict_func_par[func][par].append(spec.GetParError(jpar)) # error
     print '=========='
     print dict_chiSq_red
     print 'Minimum chi^2/ndof function:', func_chiSq_ed_min
@@ -1559,6 +1566,44 @@ The input is one output file of flute or foam.
     tbl = Table(lst_tbl_header, lst_tbl_body, 'Fitting parameters (forward folding)', '')
     tbl.write('TBL_{0}{1}'.format(name_source, strSuffix), 'apjtex', path_dir_work)
     return dict_func_par
+
+
+def FoldFindBestFit(bool_norm, name_src, path_filein, path_dirwork, str_suffix, enorm, emin, emax, ndof=0, lst_fc=['PWL', 'LP', 'EPWL']):
+    dict_par1st = Fold(name_src, path_filein, path_dirwork, str_suffix, lst_fc, emin, emax, enorm)
+
+    if dict_par1st['LP']['d.o.f']>=ndof and dict_par1st['EPWL']['d.o.f']>=ndof and dict_par1st['PWL']['d.o.f']>ndof:
+        chired_LP = dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f']
+        chired_PWL = dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f']
+        chired_EPWL = dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f']
+        chered_min = min(chired_LP, chired_PWL, chired_EPWL)
+        if chired_PWL==chered_min:
+            fc_best = 'PWL'
+        elif chired_LP==chered_min:
+            fc_best = 'LP'
+        elif chired_EPWL==chered_min:
+            fc_best = 'EPWL'
+    else:
+        fc_best = 'LP'
+    pathFileBestFit = '{0}/Output_fold_{1}_{2}_{3}_{4}-{5}GeV.root'.format(path_dirwork, name_src, str_suffix, fc_best, emin, emax)
+    return pathFileBestFit
+    # if dict_par1st['LP']['d.o.f']>=ndof and dict_par1st['EPWL']['d.o.f']>=ndof and dict_par1st['PWL']['d.o.f']>ndof:
+    #     if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f'] or dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f'] <= dict_par1st['PWL']['\\chi^2']/dict_par1st['PWL']['d.o.f']:
+    #         if dict_par1st['LP']['\\chi^2']/dict_par1st['LP']['d.o.f'] <= dict_par1st['EPWL']['\\chi^2']/dict_par1st['EPWL']['d.o.f']:
+    #             assumedSpectrum = 'pow(x/{0},{1}-({2})*log10(x/{0}))'.format(enorm, dict_par1st['LP']['$\\alpha$'][0], dict_par1st['LP']['$\\beta$'][0])
+    #             if bool_norm==1:
+    #                 assumedSpectrum = '{0}*'.format(dict_par1st['LP']['$N_{1}$'][0]) + assumedSpectrum
+    #         else:
+    #             assumedSpectrum = 'pow(x/{0},{1}) * exp(-x/{2})'.format(enorm, dict_par1st['EPWL']['$\\alpha$'][0], dict_par1st['EPWL']['$E_{cut}$[TeV]'][0])
+    #             if bool_norm==1:
+    #                 assumedSpectrum = '{0}*'.format(dict_par1st['EPWL']['$N_{1}$'][0]) + assumedSpectrum
+    #     else:
+    #         assumedSpectrum = 'pow(x/{0},{1})'.format(enorm, dict_par1st['PWL']['$\\alpha$'][0])
+    #         if bool_norm==1:
+    #             assumedSpectrum = '{0}*'.format(dict_par1st['PWL']['$N_{1}$'][0]) + assumedSpectrum
+    # else:
+    #     assumedSpectrum = ''
+#    print 'Best fit:', assumedSpectrum
+#    return assumedSpectrum
 
 
 def Unfold(name_source, li_path_input, path_dir_work='.', strSuffix='', li_func=[1, 2, 3, 4, 5], li_method = [3, 6], eFitMin=100, eFitMax=10000, deabsorption=True):
@@ -1866,13 +1911,13 @@ class SlowMARS(QuickMARS):
                 pathFluteBinRefer = pathFluteBinRefer + '_EnRF'
             pathFluteBinRefer = pathFluteBinRefer + '.root'
             strOutput = '{0}_run{1}_{2}GeV_{3}AzBins_single-bin'.format(self.getConfigName(), runUiq, int(eth), nBinAz)
-            dictPathFluteIn = '{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
+            pathFluteIn = '{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
             if bDoTwice==True:
-                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom=False, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec)
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, False, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec)
             else:
                 self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec)
-            if path.exists(dictPathFluteIn)==False:
-                print dictPathFluteIn, 'have not been produced!!!'
+            if path.exists(pathFluteIn)==False:
+                print pathFluteIn, 'have not been produced!!!'
                 for pathmelibea in aFile:
                     if runUiq in pathmelibea:
                         filemelibea = ROOT.TFile(pathmelibea, 'READ')
@@ -1883,7 +1928,7 @@ class SlowMARS(QuickMARS):
                             print pathmelibea, 'have', trevt.GetEntries(), 'events.'
                             return 1
             else:
-                dictPath[runUiq] = dictPathFluteIn#'{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
+                dictPath[runUiq] = pathFluteIn#'{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
                 aRunValid.append(runUiq)
 
         if bDoTwice==True:
@@ -1938,22 +1983,29 @@ class SlowMARS(QuickMARS):
         self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, bNightWise, bRunWise, bSingleBin, bCustom, fluxMaxInCrab, nightDesignate=strNightShort, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer="{0}/Output_flute_{1}_{2}_{3}GeV_{4}AzBins_night-wise.root".format(pathDirOut, self.getConfigName(), strNightShort, int(eth), nBinAz), nbinAz=nBinAz)
 
 
-    def createAllNightCard(self, eth=300, erangemin=100, erangemax=1000, binning="run-wise", bFoam=True, bNightlyFlux=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True, strFileInitial="20??????", fc_spec="", mBinAz=1, bEnergyRF=False):#, lst_config=[]):
+    def createAllNightCard(self, eth=300, emax=100000, erangemin=100, erangemax=1000, bIncludeAny=False, binning="run-wise", bFoam=True, bNightlyFlux=True, bCombineLC=True, bUnfoldPL=True, bFoldPL=True, strFileInitial="20??????", fc_spec="", mBinAz=1, bEnergyRF=False):#, lst_config=[]):
         """Execute the post-flute analysis night by night. Flute output files should be in the night directories before running.
 """
         # Make a list of nights
         li_dir_Night = glob.glob('{0}/NightlyFlute/{1}'.format(self.pathDirAnalysis, strFileInitial))
+        li_dir_Night.sort()
         print li_dir_Night
         for path_night in li_dir_Night:
             print ''
             print "*", path_night
             strNightShort = path_night[-8:]
             aFile = []
-            path_search = '{0}/Output_flute_{1}_run*_{2}GeV_{3}AzBins_{4}.root'.format(path_night, self.getConfigName(), int(eth), int(mBinAz), binning)
+            if bIncludeAny==True:
+                path_search = '{0}/Output_flute_*_run*_{1}GeV_{2}AzBins_{3}.root'.format(path_night, int(eth), int(mBinAz), binning)
+            else:
+                path_search = '{0}/Output_flute_{1}_run*_{2}GeV_{3}AzBins_{4}.root'.format(path_night, self.getConfigName(), int(eth), int(mBinAz), binning)
             print path_search
             aFile = glob.glob(path_search) #strNightShort, int(eth), int(mBinAz), binning))
+            aFile = list(set(aFile))
+            aFile.sort()
+            print len(aFile), 'files.'
             print aFile
-            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=eth, efitmin=erangemin, efitmax=erangemax, bin_src=binning, assumed_spec=fc_spec)
+            night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=erangemin, emax=100000, efitmin=erangemin, efitmax=erangemax, enorm=eth, bin_src=binning, assumed_spec=fc_spec)
             # if bUpdateFlute==True:
             #     print 'Updating Flute results...'
             #     night.foam()
@@ -1973,12 +2025,12 @@ class SlowMARS(QuickMARS):
                 night.foam()
             if bFoldPL==True:
                 night.foldPL()
-            if bNightlyFlux==True:
-                night.calcFlux()
             if bCombineLC==True:
                 night.combineLC()
             if bUnfoldPL==True:
                 night.unfoldPL()
+            if bNightlyFlux==True:
+                night.calcFlux()
 
             
 class NightCard:
@@ -1988,7 +2040,7 @@ class NightCard:
 4) Fine binning LC (future)
 5) Night flux value (future)
 """
-    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=300, efitmin=100, efitmax=10000, bin_src="run-wise", enorm=300, nbinAz=12, assumed_spec="pow(x/300.,-2.31-0.26*log10(x/300.))"):
+    def __init__(self, source, night, li_path_fluteoutput, path_output, emin=100, emax=100000, efitmin=100, efitmax=1000, bin_src="run-wise", enorm=300, nbinAz=12, assumed_spec="pow(x/300.,-2.31-0.26*log10(x/300.))"):
         self.NAMESRC = source
         self.TIMETHISNIGHT = Time(night, format='iso', in_subfmt='date', out_subfmt='date', scale='utc')
         self.TIMETHISNIGHT_SHORT = MakeShortDateExpression(self.TIMETHISNIGHT.value)
@@ -1996,6 +2048,7 @@ class NightCard:
         self.NFLUTEOUTPUT = len(self.LI_PATH_FLUTEOUTPUT)
         self.PATH_OUTPUT = path_output
         self.EMIN=emin
+        self.EMAX=emax
         self.EFITMIN=efitmin
         self.EFITMAX=efitmax
         self.ENORM=enorm
@@ -2009,44 +2062,67 @@ class NightCard:
         if self.NFLUTEOUTPUT>1:
             Foam(name_source=self.NAMESRC, li_path_input=self.LI_PATH_FLUTEOUTPUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT)
         else:
-            print 'No Flute target.'
+            print 'No Foam target.'
 
 
     def calcFlux(self):
-        file_list = open('list_LC_temp.txt', 'w')
-        for file_input in self.LI_PATH_FLUTEOUTPUT:
-            file_list.write("""{0}
-""".format(file_input))
-        file_list.close()
         SetEnvironForMARS("5.34.14")
-        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CalcFoamedFlux.C("{1}", {2}, {3}, "{4}/NightlyFlux_{5}_{6}_{2}GeV.csv")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_FOAMOUT, self.ENORM, int(self.TIMETHISNIGHT.mjd+0.5), self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT)])
+        path_csv = "{0}/NightlyFlux_{1}_{2}_{3}GeV.csv".format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.ENORM)
+        if path.exists(self.PATH_FOAMOUT)==True:
+            path_bestfit = FoldFindBestFit(True, self.NAMESRC, self.PATH_FOAMOUT, self.PATH_OUTPUT, 'forCalcFlux', self.ENORM, self.EMIN, self.EMAX, 0)
+            #file_bestfit = ROOT.TFile(path_bestfit, 'READ')
+            #spec_abs = file_bestfit.Get('abs_spec')
+#            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CalcFoamedFlux.C("{1}", {2:d}, "{3}", {4:d}, "{5}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_FOAMOUT, self.ENORM, spec_assum, int(self.TIMETHISNIGHT.mjd+0.5), path_csv)])
+            subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CalcFoamedFlux.C("{1}", {2:d}, "{3}", {4:d}, "{5}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_FOAMOUT, self.ENORM, path_bestfit, int(self.TIMETHISNIGHT.mjd+0.5), path_csv)])
+        else:
+            str_result_csv = """#MJD/I:flux/F:fluxErr/F
+"""
+            d1, d2 = ROOT.Double(0), ROOT.Double(0) #ROOT.Double
+            e1, e2 = ROOT.Double(0), ROOT.Double(0) #ROOT.Double
+            for path_flute in self.LI_PATH_FLUTEOUTPUT:
+                file_flute = ROOT.TFile(path_flute, 'READ')
+                greLC = file_flute.FindObjectAny("LightCurve")
+                for ip in range(greLC.GetN()):
+                    greLC.GetPoint(ip, d1, d2)
+                    e1 = greLC.GetErrorX(ip)
+                    e2 = greLC.GetErrorY(ip)
+                    str_result_csv = str_result_csv + """{0},{1},{2}
+""".format(int(d1+0.5), d2, e2)
+                    print 'MJD {0}: Flux = {1} +/- {2}'.format(d1,d2,e2)
 
+            with open(path_csv, 'w') as text:
+                text.write(str_result_csv)
+                
 
     def combineLC(self):
+        path_csv = "{0}/CombinedLC_{1}_{2}_{3}GeV.csv".format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.ENORM)
         file_list = open('list_LC_temp.txt', 'w')
         for file_input in self.LI_PATH_FLUTEOUTPUT:
             file_list.write("""{0}
 """.format(file_input))
         file_list.close()
         SetEnvironForMARS("5.34.14")
-        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV_{5}AzBins_{6}.root", "{2}_{3}")'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.EMIN), self.NBIN_AZ, self.BINSRC)])
+        subprocess.call([ 'root', '-b', '-q', '{0}/MarsUtil/CombineLCs.C("list_LC_temp.txt", "{1}/LightCurve_{2}_{3}_{4}GeV_{5}AzBins_{6}.root", "{2}_{3}", "{7}", 0, 1)'.format(os.environ['PATH_PYTHON_MODULE_MINE'], self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, int(self.ENORM), self.NBIN_AZ, self.BINSRC, path_csv)])
 
 
     def foldPL(self):
         if self.NFLUTEOUTPUT>1:
-            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.PATH_FOAMOUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX, eNorm=self.ENORM)
+            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.PATH_FOAMOUT, path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX, eNorm=self.ENORM, tableformat='csv')
         else:
-            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.LI_PATH_FLUTEOUTPUT[0], path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX)
+            dict_par = Fold(name_source=self.NAMESRC, path_file_input=self.LI_PATH_FLUTEOUTPUT[0], path_dir_work=self.PATH_OUTPUT, strSuffix=self.TIMETHISNIGHT_SHORT, li_func = ['PWL'], eFitMin=self.EFITMIN, eFitMax=self.EFITMAX, tableformat='csv')
         file_csv = open('{0}/FoldFitPars_{1}_{2}_{3}-{4}GeV_PWL.csv'.format(self.PATH_OUTPUT, self.NAMESRC, self.TIMETHISNIGHT_SHORT, self.EFITMIN, self.EFITMAX), 'w')
         str_descript = "#MJD/I:Function/C:ChiSquare/F:NDF/I"
         for ipar in range(2):
             str_descript = str_descript + ":Par{0}/F:Par{0}Err/F".format(ipar)
         str_descript = str_descript + """
 """
-        for key_func, li_func in dict_par.items():
+        for key_func, lst_par_func in dict_par.items():
             str_descript = str_descript + "{0},{1}".format(int(self.TIMETHISNIGHT.mjd+0.5), key_func)
-            for li_par in li_func:
-                str_descript = str_descript + ",{0},{1}".format(li_par[0],li_par[1]) 
+            print 'Key:', key_func
+            print 'Value:', lst_par_func
+            str_descript = str_descript + ',{0},{1},{2},{3},{4},{5}'.format(lst_par_func['\\chi^2'], lst_par_func['d.o.f'], lst_par_func['$N_{1}$'][0], lst_par_func['$N_{1}$'][1], lst_par_func['$\\alpha$'][0], lst_par_func['$\\alpha$'][1])
+#            for li_par in dct_par_func.values:
+ #               str_descript = str_descript + ",{0},{1}".format(li_par[0],li_par[1]) 
             str_descript = str_descript + """
 """
         file_csv.write(str_descript)
