@@ -917,7 +917,7 @@ Odie.maxZenith: {1}
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10., emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False, bEnRF=False, pathPreviousSpec=""):#, pathFindConfig=''):#, pathPreviousSpec=""):
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10, emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False, bEnRF=False, pathPreviousSpec=""):#, pathFindConfig=''):#, pathPreviousSpec=""):
         SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
@@ -1516,7 +1516,7 @@ The input is one output file of flute or foam.
         print func
         dict_func_par[func] = {} # Add an empty dictonary to the mother dictionary
         SetEnvironForMARS("5.34.24")
-        str_title_output = '{0}_{1}_{2}-{3}GeV'.format(strSuffix, func, eFitMin, eFitMax)
+        str_title_output = '{0}_{1}_{2}-{3}GeV'.format(strSuffix, func, int(eFitMin), int(eFitMax))
         aCmd = ['fold', '-b', '--inputfile={0}'.format(path_file_input), '--function={0}'.format(func), '--log=Log_Fold_{0}{1}.log'.format(name_source, str_title_output), '--redshift={0}'.format(GetRedshift(name_source)), '--minEest={0}'.format(eFitMin), '--maxEest={0}'.format(eFitMax), '--NormalizationE={0}'.format(eNorm)]
         print aCmd
         subprocess.call(aCmd)
@@ -2004,6 +2004,9 @@ class SlowMARS(QuickMARS):
             aFile = list(set(aFile))
             aFile.sort()
             print len(aFile), 'files.'
+            if len(aFile)<1:
+                print 'No file!!!', strNightShort, 'is being skipped...'
+                continue
             print aFile
             night = NightCard(source=self.getSourceName(), night='{0}-{1}-{2}'.format(strNightShort[:4], strNightShort[4:6],strNightShort[6:8]), li_path_fluteoutput=aFile, path_output=path_night, emin=erangemin, emax=100000, efitmin=erangemin, efitmax=erangemax, enorm=eth, bin_src=binning, assumed_spec=fc_spec)
             # if bUpdateFlute==True:
