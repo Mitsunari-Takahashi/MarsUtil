@@ -28,6 +28,9 @@ from pTable import Table
 from GetUnfoldedSED import GetUnfoldedSED
 from GetOdieResults import GetOdieResults
 
+
+NBIN_ENERGY_DECADE_STD = 6
+
 class SettingsDC:
     """Class for settings of quate, image cleaning and tuning of MC, depending on DC.
 SettingsDC(naDC=<DC in nA>, bReducedHV=False)"""
@@ -937,7 +940,7 @@ Odie.maxZenith: {1}
         if os.environ['OSTYPE'][:6]=='darwin':
             subprocess.call(['open', '..'])
 
-    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10, emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False, bEnRF=False, bAtmCorr=True, pathPreviousSpec=""):#, pathFindConfig=''):#, pathPreviousSpec=""):
+    def flute(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bNightWise=True, bRunWise=True, bSingleBin=False, bCustom=False, fluxMaxInCrab=1.1, nightDesignate='', runDesignate='', bDisplay=True, nameSubDirWork='', emin=10, emax=100000, nebin=0, nbinAz=1, pathCustomBinRefer="", bForce=False, bEnRF=False, bAtmCorr=True, pathPreviousSpec="", wCustomBin=3.0):#, pathFindConfig=''):#, pathPreviousSpec=""):
         SetEnvironForMARS("5.34.24")
         if not isinstance(bMelibeaNonStdMc, bool):
             bMelibeaNonStdMc=self.getSettingsDC().getBoolTunedTest()
@@ -1045,9 +1048,12 @@ flute.maxZd: {1}
         if assumedSpectrum != "":
             strRcAssumedSpectrum = """flute.AssumedSpectrum: {0}
 """.format(assumedSpectrum)
-        
+        strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
+        strSuffixEnBin = ''
+        if nebin!=0:
+            strSuffixEnBin = '_{0}EnBins'.format(nebin)
         if nebin==0:
-            nebin = int((log10(emax) - log10(emin)) * 6)
+            nebin = int((log10(emax) - log10(emin)) * NBIN_ENERGY_DECADE_STD)
         strRcEnergyRange = """flute.nBinsEnergyEst: {0}
 flute.minEnergyEst: {1}
 flute.maxEnergyEst: {2}
@@ -1069,7 +1075,7 @@ flute.maxEnergyEst: {2}
         if bNightWise==True:
             aBinning.append('night-wise')
         if bCustom==True:
-            aBinning.append('custom')
+            aBinning.append('custom{0:02}min'.format(int(wCustomBin+0.5)))
         for wise in aBinning:
             SetEnvironForMARS("5.34.24")
             if nameSubDirWork=='':
@@ -1082,13 +1088,9 @@ flute.maxEnergyEst: {2}
             print os.getcwd()
             strRcLc = """flute.EminLC: {0}
 flute.LCbinning: {1}
-""".format(eth, wise)
+""".format(eth, 'custom' if wise[:6]=='custom' else wise)
             #strSuffixAzBin = ''
             #if nbinAz != 1:
-            strSuffixAzBin = '_{0}AzBins'.format(nbinAz)
-            strSuffixEnBin = ''
-            if nebin!=0:
-                strSuffixEnBin = '_{0}EnBins'.format(nebin)
             strOutput = '{0}_{1}{2}GeV{3}{4}_{5}'.format(self.getConfigName(), strOutDesignate, int(eth), strSuffixAzBin, strSuffixEnBin, wise)
             if bEnRF==True:
                 strOutput = strOutput + "_EnRF"
@@ -1103,13 +1105,13 @@ flute.LCbinning: {1}
                         else:
                             print 'Flute had not finished. Processing it.'
                             
-            if wise=="custom":
+            if wise[:6]=="custom":
                 if pathCustomBinRefer=="":
                     pathCustomBinRefer = "{0}/night-wise/Output_flute_{1}_{2}GeV_night-wise.root".format(self.getPathDirFlute(), self.getConfigName(), int(eth))
                 if path.exists(pathCustomBinRefer)==False:
                     print "{0} does not exist!!!".format(pathCustomBinRefer)
                     return 0
-                aBinCustom = GetLC_bins(pathCustomBinRefer) #Output_flute file
+                aBinCustom = GetLC_bins(pathCustomBinRefer, minBinWidth=wCustomBin) #Output_flute file
                 if aBinCustom==1:
                     print 'Flute is being skipped.'
                     continue
@@ -1973,7 +1975,7 @@ class SlowMARS(QuickMARS):
     
 
 
-    def fluteAllRunByRun(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20", nBinAz=1, bForceRedo=False, bNewErec=False, bDoTwice=True, bAtmCorrection=False, nBinEnr=0):#, lst_dir_config=[]):
+    def fluteAllRunByRun(self, eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="",bSingleBin=True, bCustom=False, fluxMaxInCrab=1.1, strFileInitial="20", nBinAz=1, bForceRedo=False, bNewErec=False, bDoTwice=True, bAtmCorrection=False, nBinEnr=0, wCustomBin=3.0):#, lst_dir_config=[]):
         """Run flute for all runs in the melibea directory run by run.
         .fluteAllRunByRun(eth=300, assumedSpectrum="", redshift="", bMelibeaNonStdMc="", bCustom=False, fluxMaxInCrab=1.1)
         """
@@ -2008,9 +2010,9 @@ class SlowMARS(QuickMARS):
                 strOutput = '{0}_run{1}_{2}GeV_{3}AzBins_{4}EnBins_single-bin'.format(self.getConfigName(), runUiq, int(eth), nBinAz, nBinEnr)
             pathFluteIn = '{0}/Output_flute_{1}.root'.format(pathDirOut, strOutput) 
             if bDoTwice==True:
-                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, False, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec, bAtmCorr=bAtmCorrection)
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, False, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec, bAtmCorr=bAtmCorrection, wCustomBin=wCustomBin)
             else:
-                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec, bAtmCorr=bAtmCorrection)
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=bForceRedo, bEnRF=bNewErec, bAtmCorr=bAtmCorrection, wCustomBin=wCustomBin)
             if path.exists(pathFluteIn)==False:
                 print pathFluteIn, 'have not been produced!!!'
                 for pathmelibea in aFile:
@@ -2060,7 +2062,7 @@ class SlowMARS(QuickMARS):
                 #     pathReferPrevious = ''
                 # else:
                 #     print 'Reffering', pathReferPrevious
-                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=True, bEnRF=bNewErec, bAtmCorr=bAtmCorrection, pathPreviousSpec=dictPathSum[dictNight[runUiq]])
+                self.flute(eth, assumedSpectrum, redshift, bMelibeaNonStdMc, False, False, bSingleBin, bCustom, fluxMaxInCrab, runDesignate=runUiq, bDisplay=False, nameSubDirWork=pathDirOut, pathCustomBinRefer=pathFluteBinRefer, nebin=nBinEnr, nbinAz=nBinAz, bForce=True, bEnRF=bNewErec, bAtmCorr=bAtmCorrection, pathPreviousSpec=dictPathSum[dictNight[runUiq]], wCustomBin=wCustomBin)
 
 
 
